@@ -129,9 +129,9 @@ void ProjectService::renderFrame(Project& project, void* window, Time time) cons
     }
 
     // Execute render graph
-    render_graph_->execute(*codec_backend_, time);
+    TextureHandle final_frame = render_graph_->execute(*codec_backend_, time);
     
-    // TODO: Present to window
+    gpu_backend_->present(final_frame, window);
 }
 
 }  // namespace vx

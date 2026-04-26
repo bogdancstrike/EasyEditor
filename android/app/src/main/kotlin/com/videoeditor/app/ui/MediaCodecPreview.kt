@@ -1,103 +1,88 @@
 package com.videoeditor.app.ui
 
 import android.graphics.SurfaceTexture
-import android.os.Handler
-import android.os.Looper
 import android.view.Surface
 import android.view.TextureView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.videoeditor.app.R
-import com.videoeditor.app.media.MediaCodecPlayer
+import com.videoeditor.app.engine.NativeBridge
+import com.videoeditor.app.engine.TimelineClip
+import com.videoeditor.app.media.LutPreset
+import com.videoeditor.app.media.VideoPreviewEngine
 
 @Composable
 fun MediaCodecPreview(
     modifier: Modifier = Modifier,
+    isPlaying: Boolean = false,
+    lutPreset: LutPreset = LutPreset.NONE,
+    onTimeUpdate: (Long) -> Unit = {},
 ) {
     val context = LocalContext.current
-    val mainHandler = remember { Handler(Looper.getMainLooper()) }
-    val player = remember { MediaCodecPlayer(context.applicationContext) }
-    var decodeStatus by remember { mutableStateOf("MediaCodec pending") }
+    var currentSurface by remember { mutableStateOf<Surface?>(null) }
+    var engine by remember { mutableStateOf<VideoPreviewEngine?>(null) }
 
-    DisposableEffect(Unit) {
+    // Observe clip changes from NativeBridge
+    val clips by NativeBridge.clips.collectAsState()
+
+    // Build the engine when the display Surface is ready; tear it down on dispose
+    DisposableEffect(currentSurface) {
+        val surf = currentSurface ?: return@DisposableEffect onDispose {}
+        val e = VideoPreviewEngine(context, surf)
+        e.setClips(NativeBridge.getTimelineClips())
+        e.setLut(lutPreset)
+        engine = e
         onDispose {
-            player.stop()
+            e.stop()
+            e.release()
+            engine = null
         }
     }
 
-    Column(modifier = modifier) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(16f / 9f)
-                .background(Color.Black),
-        ) {
-            AndroidView(
-                modifier = Modifier.matchParentSize(),
-                factory = { viewContext ->
-                    TextureView(viewContext).apply {
-                        surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                            override fun onSurfaceTextureAvailable(
-                                surfaceTexture: SurfaceTexture,
-                                width: Int,
-                                height: Int,
-                            ) {
-                                Thread(
-                                    {
-                                        val surface = Surface(surfaceTexture)
-                                        player.playLoopRawResource(
-                                            rawResourceId = R.raw.phase0_h264_sample,
-                                            outputSurface = surface,
-                                        ) { status ->
-                                            mainHandler.post {
-                                                decodeStatus = status
-                                            }
-                                        }
-                                        surface.release()
-                                    },
-                                    "VxPlaybackLoop",
-                                ).start()
-                            }
+    // Propagate clip changes to existing engine (no rebuild needed)
+    LaunchedEffect(clips) {
+        engine?.setClips(clips)
+    }
 
-                            override fun onSurfaceTextureSizeChanged(
-                                surfaceTexture: SurfaceTexture,
-                                width: Int,
-                                height: Int,
-                            ) = Unit
+    // Propagate LUT changes
+    LaunchedEffect(lutPreset) {
+        engine?.setLut(lutPreset)
+    }
 
-                            override fun onSurfaceTextureDestroyed(surfaceTexture: SurfaceTexture): Boolean {
-                                player.stop()
-                                return true
-                            }
-
-                            override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) = Unit
-                        }
-                    }
-                },
-            )
+    // Start / stop
+    LaunchedEffect(isPlaying) {
+        if (isPlaying) {
+            engine?.play(onTimeUpdate)
+        } else {
+            engine?.stop()
         }
-        Text(
-            modifier = Modifier.padding(top = 8.dp),
-            text = decodeStatus,
-            color = Color(0xFF4D5B5A),
-            style = MaterialTheme.typography.bodySmall,
+    }
+
+    Box(modifier = modifier.background(Color.Black)) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { ctx ->
+                TextureView(ctx).apply {
+                    surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                        override fun onSurfaceTextureAvailable(st: SurfaceTexture, w: Int, h: Int) {
+                            currentSurface = Surface(st)
+                        }
+                        override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) = Unit
+                        override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
+                            engine?.stop()
+                            currentSurface?.release()
+                            currentSurface = null
+                            return true
+                        }
+                        override fun onSurfaceTextureUpdated(st: SurfaceTexture) = Unit
+                    }
+                }
+            },
         )
     }
 }

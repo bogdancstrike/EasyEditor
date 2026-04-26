@@ -306,6 +306,11 @@ void VulkanBackend::updateTexture3D(TextureHandle texture, std::span<const uint8
     throw Error(VX_ERR_UNSUPPORTED, "Vulkan 3D texture updates are not implemented yet");
 }
 
+void VulkanBackend::present(TextureHandle texture, void* window) {
+    static_cast<void>(texture);
+    static_cast<void>(window);
+}
+
 void VulkanBackend::waitForGpu() {
     checkVk(vkDeviceWaitIdle(device_), "vkDeviceWaitIdle");
 }

@@ -34,6 +34,7 @@ public:
                          const ShaderConstants& constants) override;
 
     void copyTexture(TextureHandle src, TextureHandle dst) override;
+    void present(TextureHandle texture, void* window) override;
     void waitForGpu() override;
 };
 

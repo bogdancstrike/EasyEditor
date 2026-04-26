@@ -27,7 +27,8 @@ public:
                          const ShaderConstants& constants) override;
 
     void copyTexture(TextureHandle src, TextureHandle dst) override;
-    void waitForGpu() override {}
+    void present(TextureHandle texture, void* window) override;
+    void waitForGpu() override;
 };
 
 /// Mutable pixel storage for tests that need to seed source textures.

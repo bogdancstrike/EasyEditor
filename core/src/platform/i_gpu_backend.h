@@ -50,6 +50,7 @@ public:
                                  const ShaderConstants& constants) = 0;
 
     virtual void copyTexture(TextureHandle src, TextureHandle dst) = 0;
+    virtual void present(TextureHandle texture, void* window) = 0;
     virtual void waitForGpu() = 0;
 };
 

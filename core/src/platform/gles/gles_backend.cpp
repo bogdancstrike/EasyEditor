@@ -293,6 +293,18 @@ void GlesBackend::copyTexture(TextureHandle src, TextureHandle dst) {
     throw Error(VX_ERR_UNSUPPORTED, "GlesBackend::copyTexture not implemented");
 }
 
+void GlesBackend::present(TextureHandle texture, void* window) {
+#ifdef ANDROID
+    static_cast<void>(texture);
+    static_cast<void>(window);
+    // TODO: EGL surface management and blit output texture to window.
+    VX_LOG_INFO("GlesBackend", "present requested for window");
+#else
+    static_cast<void>(texture);
+    static_cast<void>(window);
+#endif
+}
+
 void GlesBackend::waitForGpu() {
 #ifdef ANDROID
     glFinish();

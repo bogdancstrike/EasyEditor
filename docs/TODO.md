@@ -40,6 +40,8 @@ Legend: 🟢 done · 🟡 in progress · 🔴 blocked · ⚪ not started
 
 ### Completed
 
+- [x] **2026-04-26 — Sequence Playback Engine.** Fully wired the Compose UI to the C++ Render Graph. Implemented a 30fps playback loop in Kotlin that drives frame-accurate rendering via JNI and `ANativeWindow`. Added `androidx-compose-material-icons-extended` for playback controls.
+- [x] **2026-04-26 — JNI Render Call & Surface Wiring.** Added `nativeRenderFrame` to `NativeBridge` and wired it through FFI to `ProjectService::renderFrame`. Integrated `ANativeWindow` handling in JNI and updated CMake to link against the Android native library.
 - [x] **2026-04-26 — Sequence Playback Engine (Core Wiring).** Implemented `AndroidCodecBackend` using NDK `AMediaExtractor`. Wired `ICodecBackend` into `SequenceNode` for frame-accurate clip switching. Updated `RenderNode::render` and `RenderGraph::execute` to pass the codec backend reference.
 - [x] **2026-04-26 — GLES 3.2 Fallback Backend.** Implemented `GlesBackend` with `RGBA16F` support and `updateTexture3D` optimization. Added RAII `GlTextureId` and `ScopedTexture` for safety.
 - [x] **2026-04-26 — Expanded Project Model.** Implemented `MediaAsset`, `Sequence`, `Track`, and `Clip` with `nlohmann::json` serialization. Added full Doxygen documentation (ADR-0009).

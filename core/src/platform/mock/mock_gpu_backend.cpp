@@ -136,6 +136,13 @@ void MockGpuBackend::copyTexture(TextureHandle src, TextureHandle dst) {
     destination.bytes = source.bytes;
 }
 
+void MockGpuBackend::present(TextureHandle texture, void* window) {
+    static_cast<void>(texture);
+    static_cast<void>(window);
+}
+
+void MockGpuBackend::waitForGpu() {}
+
 std::span<uint8_t> mockTextureBytes(TextureHandle texture) {
     MockTexture& mock = requireMockTexture(texture);
     validateHandleMatchesTexture(texture, mock);

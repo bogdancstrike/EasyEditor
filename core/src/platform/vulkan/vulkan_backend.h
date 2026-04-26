@@ -37,6 +37,7 @@ public:
 
     void copyTexture(TextureHandle src, TextureHandle dst) override;
     void updateTexture3D(TextureHandle texture, std::span<const uint8_t> data) override;
+    void present(TextureHandle texture, void* window) override;
     void waitForGpu() override;
 
     [[nodiscard]] std::string deviceName() const { return device_name_; }
