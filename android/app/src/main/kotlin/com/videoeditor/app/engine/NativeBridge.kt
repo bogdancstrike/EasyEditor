@@ -56,9 +56,15 @@ object NativeBridge {
         }
     }
 
+    fun renderFrame(surface: android.view.Surface, timeMs: Long): Int {
+        if (projectHandle == 0L) return -1
+        return nativeRenderFrame(projectHandle, surface, timeMs)
+    }
+
     external fun nativeVersion(): String
     external fun nativeVulkanSmokeTest(): String
 
     private external fun nativeCreateProject(name: String): Long
     private external fun nativeAddAsset(handle: Long, path: String, durationMs: Long, width: Int, height: Int): Int
+    private external fun nativeRenderFrame(handle: Long, surface: android.view.Surface, timeMs: Long): Int
 }

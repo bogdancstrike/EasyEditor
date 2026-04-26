@@ -35,12 +35,12 @@ Legend: 🟢 done · 🟡 in progress · 🔴 blocked · ⚪ not started
 
 ### Active
 
-- [ ] **Sequence Playback Engine.** Fully wire `SequenceNode` and `RenderGraph` into the Compose UI to enable live preview of sequenced clips beyond the initial skeleton.
 - [ ] **Export Pipeline.** End-to-end export that renders the sequenced clips with LUTs and saves the result to the Android MediaStore (Gallery).
 - [ ] **UI/UX Polish.** Functional timeline interactions: drag clips, snap, visual feedback for trimming.
 
 ### Completed
 
+- [x] **2026-04-26 — Sequence Playback Engine (Core Wiring).** Implemented `AndroidCodecBackend` using NDK `AMediaExtractor`. Wired `ICodecBackend` into `SequenceNode` for frame-accurate clip switching. Updated `RenderNode::render` and `RenderGraph::execute` to pass the codec backend reference.
 - [x] **2026-04-26 — GLES 3.2 Fallback Backend.** Implemented `GlesBackend` with `RGBA16F` support and `updateTexture3D` optimization. Added RAII `GlTextureId` and `ScopedTexture` for safety.
 - [x] **2026-04-26 — Expanded Project Model.** Implemented `MediaAsset`, `Sequence`, `Track`, and `Clip` with `nlohmann::json` serialization. Added full Doxygen documentation (ADR-0009).
 - [x] **2026-04-26 — Android Media Picker.** Implemented modern Photo Picker in `MediaPool` with thread-safe (Dispatchers.IO) JNI wiring and metadata extraction.

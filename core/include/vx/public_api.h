@@ -102,6 +102,11 @@ VX_API vx_status_t vx_project_load_json(const char* json, VxProject** out_projec
 /// width/height: native resolution.
 VX_API vx_status_t vx_project_add_asset(VxProject* project, const char* path, int64_t duration_ms, int32_t width, int32_t height);
 
+/// Render a single frame of the project sequence.
+/// window: platform native window (caller owned).
+/// time_ms: timeline position.
+VX_API vx_status_t vx_project_render_frame(VxProject* project, void* window, int64_t time_ms);
+
 // --------------------------------------------------------------------------
 // (Phase 1+) Sequence, clip, render, export FFI surfaces will be appended here.
 // Do not add new sections without updating docs/ffi.md.

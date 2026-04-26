@@ -5,8 +5,30 @@
 #include <string>
 
 #include "util/error.h"
+#include "util/log.h"
+#include "application/render_graph.h"
+
+#ifdef ANDROID
+#include "platform/gles/gles_backend.h"
+#include "platform/android/android_codec_backend.h"
+#else
+#include "platform/mock/mock_gpu_backend.h"
+#include "platform/mock/mock_codec_backend.h"
+#endif
 
 namespace vx {
+
+ProjectService::ProjectService() {
+#ifdef ANDROID
+    gpu_backend_ = std::make_unique<GlesBackend>();
+    codec_backend_ = std::make_unique<AndroidCodecBackend>();
+#else
+    gpu_backend_ = std::make_unique<MockGpuBackend>();
+    codec_backend_ = std::make_unique<MockCodecBackend>();
+#endif
+}
+
+ProjectService::~ProjectService() = default;
 
 std::unique_ptr<Project> ProjectService::createProject(const std::string& name) const {
     if (name.empty()) {
@@ -75,6 +97,41 @@ void ProjectService::addMediaAsset(Project& project, const std::string& path, Ti
     track.clips.push_back(clip);
     
     project.modified_at = std::chrono::system_clock::now();
+}
+
+void ProjectService::renderFrame(Project& project, void* window, Time time) const {
+    static_cast<void>(window); // TODO: Window management
+    
+    if (!render_graph_) {
+        render_graph_ = std::make_unique<RenderGraph>(*gpu_backend_);
+    }
+
+    // Update render graph with current sequence
+    if (!project.sequences.empty()) {
+        const auto& sequence = project.sequences.front();
+        std::vector<ResolvedClip> resolved_clips;
+        for (const auto& track : sequence.tracks) {
+            for (const auto& clip : track.clips) {
+                // Find asset path
+                std::string path;
+                for (const auto& asset : project.media_pool) {
+                    if (asset.id == clip.asset_id) {
+                        path = asset.source_path;
+                        break;
+                    }
+                }
+                if (!path.empty()) {
+                    resolved_clips.push_back({clip, path});
+                }
+            }
+        }
+        render_graph_->setClips(resolved_clips);
+    }
+
+    // Execute render graph
+    render_graph_->execute(*codec_backend_, time);
+    
+    // TODO: Present to window
 }
 
 }  // namespace vx

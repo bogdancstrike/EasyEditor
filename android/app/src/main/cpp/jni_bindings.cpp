@@ -1,4 +1,5 @@
 #include <jni.h>
+#include <android/native_window_jni.h>
 
 #include <exception>
 #include <string>
@@ -54,5 +55,25 @@ Java_com_videoeditor_app_engine_NativeBridge_nativeAddAsset(JNIEnv* env, jobject
 
     vx_status_t status = vx_project_add_asset(project, c_path, static_cast<int64_t>(duration_ms), static_cast<int32_t>(width), static_cast<int32_t>(height));
     env->ReleaseStringUTFChars(path, c_path);
+    return static_cast<jint>(status);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_videoeditor_app_engine_NativeBridge_nativeRenderFrame(JNIEnv* env, jobject /* thiz */, jlong handle, jobject surface, jlong time_ms) {
+    if (handle == 0) {
+        return static_cast<jint>(VX_ERR_INVALID_ARG);
+    }
+    if (!surface) {
+        return static_cast<jint>(VX_ERR_INVALID_ARG);
+    }
+
+    VxProject* project = reinterpret_cast<VxProject*>(handle);
+    ANativeWindow* window = ANativeWindow_fromSurface(env, surface);
+    if (!window) {
+        return static_cast<jint>(VX_ERR_INVALID_ARG);
+    }
+
+    vx_status_t status = vx_project_render_frame(project, window, static_cast<int64_t>(time_ms));
+    ANativeWindow_release(window);
     return static_cast<jint>(status);
 }

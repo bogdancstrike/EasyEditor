@@ -1,5 +1,9 @@
 # core/CMakeLists.txt — the shared engine.
 
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 set(VX_PUBLIC_HEADERS
     include/vx/public_api.h
     include/vx/version.h
@@ -92,10 +96,10 @@ if (ANDROID)
         src/platform/android/android_codec_backend.cpp
         src/platform/android/android_codec_backend.h
     )
-    target_link_libraries(vx_platform_android PUBLIC vx_platform_iface PRIVATE vx_util mediandk)
+    target_link_libraries(vx_platform_android PUBLIC vx_platform_iface PRIVATE vx_util mediandk android)
     target_include_directories(vx_platform_android PUBLIC src)
 
-    target_link_libraries(videoeditor PRIVATE vx_platform_vulkan vx_platform_gles vx_platform_android)
+    target_link_libraries(videoeditor PRIVATE vx_platform_vulkan vx_platform_gles vx_platform_android android)
     # add_subdirectory(src/platform/mediacodec)    # TODO Phase 0
 endif()
 

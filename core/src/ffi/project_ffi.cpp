@@ -99,4 +99,14 @@ vx_status_t vx_project_add_asset(VxProject* project, const char* path, int64_t d
 }
 VX_FFI_CATCH
 
+vx_status_t vx_project_render_frame(VxProject* project, void* window, int64_t time_ms) VX_FFI_TRY {
+    if (project == nullptr || project->project == nullptr || window == nullptr) {
+        return VX_ERR_INVALID_ARG;
+    }
+
+    projectService().renderFrame(*project->project, window, vx::Time::fromSeconds(static_cast<double>(time_ms) / 1000.0));
+    return VX_OK;
+}
+VX_FFI_CATCH
+
 }  // extern "C"

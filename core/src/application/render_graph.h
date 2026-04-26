@@ -26,6 +26,8 @@ public:
     /// Phase 1: returns a placeholder texture.
     [[nodiscard]] TextureHandle execute(ICodecBackend& codec_backend, Time time);
 
+    void setClips(const std::vector<ResolvedClip>& clips) { sequence_node_->setClips(clips); }
+
     SequenceNode& sequence_node() { return *sequence_node_; }
     LutNode& lut_node() { return *lut_node_; }
 
