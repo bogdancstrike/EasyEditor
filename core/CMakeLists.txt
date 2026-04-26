@@ -46,6 +46,8 @@ target_include_directories(vx_platform_mock PUBLIC src)
 add_library(vx_application STATIC
     src/application/project_service.cpp
     src/application/project_service.h
+    src/application/render_graph.cpp
+    src/application/render_graph.h
 )
 target_link_libraries(vx_application PUBLIC vx_domain vx_platform_iface)
 
@@ -71,7 +73,15 @@ if (ANDROID)
     )
     target_link_libraries(vx_platform_vulkan PUBLIC vx_platform_iface PRIVATE vx_util vulkan)
     target_include_directories(vx_platform_vulkan PUBLIC src)
-    target_link_libraries(videoeditor PRIVATE vx_platform_vulkan)
+    
+    add_library(vx_platform_gles STATIC
+        src/platform/gles/gles_backend.cpp
+        src/platform/gles/gles_backend.h
+    )
+    target_link_libraries(vx_platform_gles PUBLIC vx_platform_iface PRIVATE vx_util GLESv3)
+    target_include_directories(vx_platform_gles PUBLIC src)
+
+    target_link_libraries(videoeditor PRIVATE vx_platform_vulkan vx_platform_gles)
     # add_subdirectory(src/platform/mediacodec)    # TODO Phase 0
 endif()
 

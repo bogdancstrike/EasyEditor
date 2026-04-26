@@ -31,19 +31,17 @@ Legend: 🟢 done · 🟡 in progress · 🔴 blocked · ⚪ not started
 
 ---
 
-## Phase 1 — MVP Editor
+## Phase 1 — MVP Editor (Working PoC)
 
 ### Active
 
-- [ ] Single-track sequence playback (read-only first, then editable).
-- [ ] Timeline UI: ruler, clip strips with thumbnail preview, playhead, pinch-to-zoom.
-- [ ] Trim, split, delete, ripple-delete via Command pattern.
-- [ ] Magnetic timeline invariants enforced in `Sequence::insertClip`.
-- [ ] Color adjustments (linear-correct exposure, contrast, highlights/shadows, saturation).
-- [ ] Single LUT slot per clip (`.cube` parser + GPU pipeline).
-- [ ] Hardcoded export presets: Instagram Reel (1080x1920 @ 30 H.264 6 Mbps), YouTube 1080p.
-- [ ] Auto-save (30s + on-action) and crash recovery prompt.
-- [ ] Performance HUD in dev builds (frame time, decode time, GPU mem).
+- [ ] **GLES 3.2 Fallback Backend.** Implement OpenGL ES 3.2 implementation of `IGpuBackend` to unblock development on emulators and older devices.
+- [ ] **Expanded Project Model.** Implement `MediaAsset`, `Sequence`, `Track`, and `Clip` in the C++ core with JSON serialization (ADR-0009).
+- [ ] **Android Media Picker.** Implement modern Photo Picker in Compose to select multiple videos and pass their URIs to the core.
+- [ ] **Sequence Playback Engine.** Extend the `MediaCodecPlayer` or implement a new `SequenceRenderer` that can transition between multiple video sources on the timeline.
+- [ ] **LUT Engine.** Implement `.cube` parser in C++ and a GPU compute shader (or fragment shader for GLES) to apply 3D LUTs.
+- [ ] **Export Pipeline.** End-to-end export that renders the sequenced clips with LUTs and saves the result to the Android MediaStore (Gallery).
+- [ ] **UI/UX Polish.** Functional timeline interactions: drag clips, snap, visual feedback for trimming.
 
 ### Completed
 
