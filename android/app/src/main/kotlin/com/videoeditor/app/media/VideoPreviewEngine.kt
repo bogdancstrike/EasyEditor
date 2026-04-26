@@ -20,6 +20,7 @@ import android.view.Surface
 import com.videoeditor.app.engine.TimelineClip
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.max
 import java.util.concurrent.atomic.AtomicBoolean
 
 private const val TAG = "VideoPreviewEngine"
@@ -40,22 +41,16 @@ private const val FRAGMENT_SHADER = """#version 300 es
 #extension GL_OES_EGL_image_external_essl3 : require
 precision mediump float;
 uniform samplerExternalOES sVideo;
-uniform int uLutPreset;
+uniform sampler3D sLut;
+uniform int uUseLut;
 in vec2 vTexCoord;
 out vec4 outColor;
-vec3 warm(vec3 c){return clamp(c*vec3(1.10,1.02,0.82)+vec3(0.02,0.0,0.0),0.0,1.0);}
-vec3 cool(vec3 c){return clamp(c*vec3(0.85,0.97,1.15)+vec3(0.0,0.0,0.02),0.0,1.0);}
-vec3 cinematic(vec3 c){float lum=dot(c,vec3(0.299,0.587,0.114));vec3 s=mix(vec3(lum),c,0.78);vec3 x=s-0.5;return clamp(x*1.05+0.5+0.06*x*x*x,0.0,1.0);}
-vec3 orangeteal(vec3 c){float lum=dot(c,vec3(0.299,0.587,0.114));float hi=lum*lum;float sh=(1.0-lum)*(1.0-lum);return clamp(c+vec3(hi*0.07,0.0,sh*0.08-hi*0.04),0.0,1.0);}
-vec3 faded(vec3 c){return clamp(c*vec3(0.9,0.9,0.85)+vec3(0.08,0.06,0.10),0.0,1.0);}
 void main(){
     vec4 c=texture(sVideo,vTexCoord);
-    vec3 col=c.rgb;
-    if(uLutPreset==1)col=warm(col);
-    else if(uLutPreset==2)col=cool(col);
-    else if(uLutPreset==3)col=cinematic(col);
-    else if(uLutPreset==4)col=orangeteal(col);
-    else if(uLutPreset==5)col=faded(col);
+    vec3 col=clamp(c.rgb,0.0,1.0);
+    if(uUseLut==1) {
+        col=texture(sLut,col).rgb;
+    }
     outColor=vec4(col,c.a);
 }
 """
@@ -81,7 +76,8 @@ class VideoPreviewEngine(
 
     @Volatile private var renderThread: Thread? = null
     @Volatile private var clips: List<TimelineClip> = emptyList()
-    @Volatile private var lutPresetIndex = 0  // 0=none, matches uLutPreset in shader
+    @Volatile private var lutPreset = LutPreset.NONE
+    @Volatile private var activeLutPreset = LutPreset.NONE
 
     // GL resources — only touched on the render thread
     private var eglDisplay: EGLDisplay = EGL14.EGL_NO_DISPLAY
@@ -89,6 +85,8 @@ class VideoPreviewEngine(
     private var eglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
     private var program = 0
     private var oesTexId = 0
+    private var lutTexId = 0
+    private var loadedLutPreset: LutPreset? = null
     private var quadVbo = 0
     private var surfaceTex: SurfaceTexture? = null
     private var decoderSurface: Surface? = null
@@ -99,12 +97,12 @@ class VideoPreviewEngine(
     }
 
     fun setLut(preset: LutPreset) {
-        lutPresetIndex = preset.ordinal  // NONE=0, WARM=1, COOL=2, CINEMATIC=3, ORANGE_TEAL=4, FADED=5
+        lutPreset = preset
     }
 
-    fun play(onTimeUpdate: (Long) -> Unit) {
+    fun play(startTimeMs: Long = 0L, onTimeUpdate: (Long) -> Unit) {
         if (isPlaying.getAndSet(true)) return
-        val t = Thread({ runPlayback(onTimeUpdate) }, "VideoRender")
+        val t = Thread({ runPlayback(startTimeMs, onTimeUpdate) }, "VideoRender")
         t.isDaemon = true
         renderThread = t
         t.start()
@@ -120,9 +118,18 @@ class VideoPreviewEngine(
         renderThread = null
     }
 
+    fun renderAt(timeMs: Long, onTimeUpdate: (Long) -> Unit = {}) {
+        stop()
+        renderThread?.join(500)
+        val t = Thread({ runSingleFrame(timeMs, onTimeUpdate) }, "VideoSeekRender")
+        t.isDaemon = true
+        renderThread = t
+        t.start()
+    }
+
     // ── Playback loop ─────────────────────────────────────────────────────────
 
-    private fun runPlayback(onTimeUpdate: (Long) -> Unit) {
+    private fun runPlayback(startTimeMs: Long, onTimeUpdate: (Long) -> Unit) {
         try {
             initEgl()
             initGl()
@@ -136,7 +143,21 @@ class VideoPreviewEngine(
             var timeOffset = 0L
             for (clip in localClips) {
                 if (!isPlaying.get()) break
-                playClip(Uri.parse(clip.uri), timeOffset, onTimeUpdate)
+                val clipEnd = timeOffset + clip.durationMs
+                if (clipEnd <= startTimeMs) {
+                    timeOffset = clipEnd
+                    continue
+                }
+                activeLutPreset = clip.lutPresetOrdinal
+                    .takeIf { it != 0 }
+                    ?.let { LutPreset.entries.getOrNull(it) }
+                    ?: lutPreset
+                playClip(
+                    uri = Uri.parse(clip.uri),
+                    timeOffsetMs = timeOffset,
+                    startAtMs = max(0L, startTimeMs - timeOffset),
+                    onTimeUpdate = onTimeUpdate,
+                )
                 timeOffset += clip.durationMs
             }
         } catch (e: Exception) {
@@ -148,7 +169,49 @@ class VideoPreviewEngine(
         }
     }
 
-    private fun playClip(uri: Uri, timeOffsetMs: Long, onTimeUpdate: (Long) -> Unit) {
+    private fun runSingleFrame(timeMs: Long, onTimeUpdate: (Long) -> Unit) {
+        try {
+            initEgl()
+            initGl()
+            val target = resolveTimelineTime(timeMs) ?: return
+            activeLutPreset = target.clip.lutPresetOrdinal
+                .takeIf { it != 0 }
+                ?.let { LutPreset.entries.getOrNull(it) }
+                ?: lutPreset
+            renderFrameAt(Uri.parse(target.clip.uri), target.localTimeMs)
+            onTimeUpdate(target.timelineTimeMs)
+        } catch (e: Exception) {
+            Log.e(TAG, "Seek render error", e)
+        } finally {
+            releaseGl()
+            releaseEgl()
+        }
+    }
+
+    private data class TimelineTarget(
+        val clip: TimelineClip,
+        val timelineTimeMs: Long,
+        val localTimeMs: Long,
+    )
+
+    private fun resolveTimelineTime(timeMs: Long): TimelineTarget? {
+        val localClips = clips
+        if (localClips.isEmpty()) return null
+        val duration = localClips.sumOf { it.durationMs }.coerceAtLeast(1L)
+        val clampedTime = timeMs.coerceIn(0L, duration - 1)
+        var offset = 0L
+        for (clip in localClips) {
+            val end = offset + clip.durationMs
+            if (clampedTime < end) {
+                return TimelineTarget(clip, clampedTime, clampedTime - offset)
+            }
+            offset = end
+        }
+        val last = localClips.last()
+        return TimelineTarget(last, duration - 1, (last.durationMs - 1).coerceAtLeast(0L))
+    }
+
+    private fun playClip(uri: Uri, timeOffsetMs: Long, startAtMs: Long, onTimeUpdate: (Long) -> Unit) {
         val extractor = MediaExtractor()
         extractor.setDataSource(context, uri, null)
 
@@ -157,6 +220,9 @@ class VideoPreviewEngine(
         } ?: run { extractor.release(); return }
 
         extractor.selectTrack(trackIdx)
+        if (startAtMs > 0L) {
+            extractor.seekTo(startAtMs * 1000L, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+        }
         val format = extractor.getTrackFormat(trackIdx)
         val mime = format.getString(MediaFormat.KEY_MIME) ?: run { extractor.release(); return }
 
@@ -168,6 +234,7 @@ class VideoPreviewEngine(
         var inputEos = false
         var outputEos = false
         var startRealtime = -1L
+        var startPtsMs = -1L
         val frameLock = Object()
         var frameReady = false
 
@@ -199,10 +266,13 @@ class VideoPreviewEngine(
                             (bufInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0
 
                     if (shouldRender) {
-                        if (startRealtime < 0L) startRealtime = SystemClock.elapsedRealtime()
+                        if (startRealtime < 0L) {
+                            startRealtime = SystemClock.elapsedRealtime()
+                            startPtsMs = bufInfo.presentationTimeUs / 1000L
+                        }
                         val ptsMs = bufInfo.presentationTimeUs / 1000L
                         val elapsed = SystemClock.elapsedRealtime() - startRealtime
-                        val delay = ptsMs - elapsed
+                        val delay = (ptsMs - startPtsMs) - elapsed
                         if (delay > 0L) SystemClock.sleep(delay)
                     }
 
@@ -216,6 +286,72 @@ class VideoPreviewEngine(
                         renderFrame()
                         onTimeUpdate(timeOffsetMs + bufInfo.presentationTimeUs / 1000L)
                     }
+                }
+            }
+        } finally {
+            surfaceTex?.setOnFrameAvailableListener(null)
+            decoder.stop()
+            decoder.release()
+            extractor.release()
+        }
+    }
+
+    private fun renderFrameAt(uri: Uri, targetMs: Long) {
+        val extractor = MediaExtractor()
+        extractor.setDataSource(context, uri, null)
+        val trackIdx = (0 until extractor.trackCount).firstOrNull { i ->
+            extractor.getTrackFormat(i).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
+        } ?: run { extractor.release(); return }
+
+        extractor.selectTrack(trackIdx)
+        extractor.seekTo(targetMs * 1000L, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+        val format = extractor.getTrackFormat(trackIdx)
+        val mime = format.getString(MediaFormat.KEY_MIME) ?: run { extractor.release(); return }
+        val decoder = MediaCodec.createDecoderByType(mime)
+        decoder.configure(format, decoderSurface, null, 0)
+        decoder.start()
+
+        val bufInfo = MediaCodec.BufferInfo()
+        val frameLock = Object()
+        var frameReady = false
+        var inputEos = false
+        var rendered = false
+
+        surfaceTex?.setOnFrameAvailableListener {
+            synchronized(frameLock) { frameReady = true; frameLock.notifyAll() }
+        }
+
+        try {
+            while (!rendered) {
+                if (!inputEos) {
+                    val inIdx = decoder.dequeueInputBuffer(10_000L)
+                    if (inIdx >= 0) {
+                        val buf = decoder.getInputBuffer(inIdx)!!
+                        val sz = extractor.readSampleData(buf, 0)
+                        if (sz < 0) {
+                            decoder.queueInputBuffer(inIdx, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                            inputEos = true
+                        } else {
+                            decoder.queueInputBuffer(inIdx, 0, sz, extractor.sampleTime, extractor.sampleFlags)
+                            extractor.advance()
+                        }
+                    }
+                }
+
+                val outIdx = decoder.dequeueOutputBuffer(bufInfo, 10_000L)
+                if (outIdx >= 0) {
+                    val shouldRender = bufInfo.size > 0 &&
+                            (bufInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0
+                    decoder.releaseOutputBuffer(outIdx, shouldRender)
+                    if (shouldRender) {
+                        synchronized(frameLock) {
+                            if (!frameReady) frameLock.wait(200)
+                            frameReady = false
+                        }
+                        renderFrame()
+                        rendered = true
+                    }
+                    if (bufInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break
                 }
             }
         } finally {
@@ -280,6 +416,9 @@ class VideoPreviewEngine(
         GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
         GLES30.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, 0)
 
+        GLES30.glGenTextures(1, texIds, 0)
+        lutTexId = texIds[0]
+
         surfaceTex = SurfaceTexture(oesTexId)
         decoderSurface = Surface(surfaceTex)
 
@@ -302,7 +441,9 @@ class VideoPreviewEngine(
         surfaceTex = null
         if (program != 0) GLES30.glDeleteProgram(program)
         GLES30.glDeleteTextures(1, intArrayOf(oesTexId), 0)
+        GLES30.glDeleteTextures(1, intArrayOf(lutTexId), 0)
         GLES30.glDeleteBuffers(1, intArrayOf(quadVbo), 0)
+        loadedLutPreset = null
     }
 
     private fun renderFrame() {
@@ -321,7 +462,8 @@ class VideoPreviewEngine(
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, oesTexId)
         GLES30.glUniform1i(GLES30.glGetUniformLocation(program, "sVideo"), 0)
-        GLES30.glUniform1i(GLES30.glGetUniformLocation(program, "uLutPreset"), lutPresetIndex)
+        val useLut = bindActiveLutTexture()
+        GLES30.glUniform1i(GLES30.glGetUniformLocation(program, "uUseLut"), if (useLut) 1 else 0)
         GLES30.glUniformMatrix4fv(GLES30.glGetUniformLocation(program, "uTexMatrix"), 1, false, texMatrix, 0)
 
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, quadVbo)
@@ -338,6 +480,40 @@ class VideoPreviewEngine(
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
 
         EGL14.eglSwapBuffers(eglDisplay, eglSurface)
+    }
+
+    private fun bindActiveLutTexture(): Boolean {
+        if (activeLutPreset == LutPreset.NONE) return false
+        if (loadedLutPreset != activeLutPreset) {
+            val lut = activeLutPreset.generateLutData(context) ?: return false
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, lutTexId)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_R, GLES30.GL_CLAMP_TO_EDGE)
+            val data = ByteBuffer.allocateDirect(lut.rgb.size)
+                .order(ByteOrder.nativeOrder())
+                .put(lut.rgb)
+                .apply { position(0) }
+            GLES30.glTexImage3D(
+                GLES30.GL_TEXTURE_3D,
+                0,
+                GLES30.GL_RGB,
+                lut.size,
+                lut.size,
+                lut.size,
+                0,
+                GLES30.GL_RGB,
+                GLES30.GL_UNSIGNED_BYTE,
+                data,
+            )
+            loadedLutPreset = activeLutPreset
+        }
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, lutTexId)
+        GLES30.glUniform1i(GLES30.glGetUniformLocation(program, "sLut"), 1)
+        return true
     }
 
     // ── Shader helpers ────────────────────────────────────────────────────────

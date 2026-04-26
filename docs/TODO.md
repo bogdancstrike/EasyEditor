@@ -35,11 +35,20 @@ Legend: 🟢 done · 🟡 in progress · 🔴 blocked · ⚪ not started
 
 ### Active
 
-- [ ] **Export Pipeline.** End-to-end export that renders the sequenced clips with LUTs and saves the result to the Android MediaStore (Gallery).
-- [ ] **UI/UX Polish.** Functional timeline interactions: drag clips, snap, visual feedback for trimming.
+- [ ] **Export Pipeline.** Replace the current MediaCodec transcode path with render-graph export so sequenced clips are exported with selected LUTs and saved to Android MediaStore (Gallery).
+- [ ] **UI/UX Polish.** Add true drag-and-drop media placement from the media pool to the timeline, trim handles, snap behavior, and visual feedback.
+- [ ] **Next UI task.** Add trim-handle gestures and snap feedback against the real project timeline.
 
 ### Completed
 
+- [x] **2026-04-26 — README Refresh.** Updated `README.md` with project purpose, Phase 1 acceptance flow, current functionality, repository layout, architecture summary, APK build/install commands, and core test commands.
+- [x] **2026-04-26 — Imported Cube LUTs.** Added DJI DLog to Rec709 plus Super 8 Daylight, Daylight Sharp, and Night `.cube` LUTs to Android raw resources and exposed them in the Look panel.
+- [x] **2026-04-26 — Real 3D LUT Preview.** Switched Android live preview from hardcoded shader formulas to GLES 3D LUT texture sampling for built-in and imported cube looks.
+- [x] **2026-04-26 — Media Pool vs Timeline Split.** Imported videos now stay in the media pool until explicitly added to the timeline; selected timeline clips can receive per-clip LUT overrides.
+- [x] **2026-04-26 — Seekable Live Preview.** Added single-frame preview rendering for timeline scrubbing and playback start from the current cursor time.
+- [x] **2026-04-26 — Real Timeline Data & Scrubbing.** Replaced mock timeline clips with `NativeBridge.clips`, scaled clip widths from actual durations, and added tap/drag seeking across the project duration.
+- [x] **2026-04-26 — Floating Tool Dock & Expanded Preview.** Reworked the Android editor shell so the preview owns the full editor width, moved Media/Look/Effects/Adjust into a collapsible floating tool dock, and tuned the light/dark theme tokens for cleaner modern surfaces.
+- [x] **2026-04-26 — MediaStore Export Skeleton.** Verified `ExportService` already implements a Phase 1 Android transcode path using `MediaExtractor`, `MediaCodec`, `MediaMuxer`, and `MediaStore`; LUT/render-graph export remains active.
 - [x] **2026-04-26 — Sequence Playback Engine.** Fully wired the Compose UI to the C++ Render Graph. Implemented a 30fps playback loop in Kotlin that drives frame-accurate rendering via JNI and `ANativeWindow`. Added `androidx-compose-material-icons-extended` for playback controls.
 - [x] **2026-04-26 — JNI Render Call & Surface Wiring.** Added `nativeRenderFrame` to `NativeBridge` and wired it through FFI to `ProjectService::renderFrame`. Integrated `ANativeWindow` handling in JNI and updated CMake to link against the Android native library.
 - [x] **2026-04-26 — Sequence Playback Engine (Core Wiring).** Implemented `AndroidCodecBackend` using NDK `AMediaExtractor`. Wired `ICodecBackend` into `SequenceNode` for frame-accurate clip switching. Updated `RenderNode::render` and `RenderGraph::execute` to pass the codec backend reference.

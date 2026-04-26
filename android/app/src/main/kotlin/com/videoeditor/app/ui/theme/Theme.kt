@@ -8,10 +8,12 @@ import androidx.compose.runtime.Composable
 
 private val AppDarkColorScheme = darkColorScheme(
     primary = NeonPink,
-    onPrimary = DarkTextPrimary,
+    onPrimary = BrandOnAccent,
     primaryContainer = DeepPink,
     secondary = ElectricBlue,
-    onSecondary = DarkTextPrimary,
+    onSecondary = BrandOnAccent,
+    tertiary = WarmAmber,
+    onTertiary = DarkBackground,
     background = DarkBackground,
     onBackground = DarkTextPrimary,
     surface = DarkSurface,
@@ -24,10 +26,12 @@ private val AppDarkColorScheme = darkColorScheme(
 
 private val AppLightColorScheme = lightColorScheme(
     primary = NeonPink,
-    onPrimary = LightTextPrimary,
+    onPrimary = BrandOnAccent,
     primaryContainer = DeepPink,
     secondary = ElectricBlue,
-    onSecondary = LightTextPrimary,
+    onSecondary = BrandOnAccent,
+    tertiary = WarmAmber,
+    onTertiary = LightTextPrimary,
     background = LightBackground,
     onBackground = LightTextPrimary,
     surface = LightSurface,

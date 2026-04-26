@@ -2,19 +2,25 @@ package com.videoeditor.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import com.videoeditor.app.engine.NativeBridge
+import com.videoeditor.app.engine.TimelineClip as EngineTimelineClip
 import com.videoeditor.app.ui.theme.ElectricBlue
 import com.videoeditor.app.ui.theme.NeonPink
 
@@ -30,14 +36,29 @@ private fun formatTimecode(ms: Long): String {
 fun Timeline(
     modifier: Modifier = Modifier,
     currentTimeMs: Long = 0L,
+    selectedClipIndex: Int? = null,
     onSeek: (Long) -> Unit = {},
+    onClipSelected: (Int) -> Unit = {},
 ) {
+    val clips by NativeBridge.clips.collectAsState()
+    val totalDurationMs = clips.sumOf { it.durationMs }.coerceAtLeast(1L)
+
     Surface(
         modifier = modifier,
         color = MaterialTheme.colorScheme.surface,
         shadowElevation = 0.dp,
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val density = LocalDensity.current
+            val timelineWidthPx = with(density) { maxWidth.toPx() }.coerceAtLeast(1f)
+            val trackWidth = maxWidth - 24.dp
+            val playheadFraction = currentTimeMs.coerceIn(0L, totalDurationMs).toFloat() / totalDurationMs
+            val playheadX = with(density) { (timelineWidthPx * playheadFraction).toDp() }
+            fun seekFromX(xPx: Float) {
+                val clamped = xPx.coerceIn(0f, timelineWidthPx)
+                onSeek((clamped / timelineWidthPx * totalDurationMs).toLong())
+            }
+
             Column {
                 // Time ruler
                 Box(
@@ -59,23 +80,48 @@ fun Timeline(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .horizontalScroll(rememberScrollState()),
+                        .pointerInput(totalDurationMs, timelineWidthPx) {
+                            detectTapGestures { offset -> seekFromX(offset.x) }
+                        }
+                        .pointerInput(totalDurationMs, timelineWidthPx) {
+                            detectDragGestures(
+                                onDragStart = { offset -> seekFromX(offset.x) },
+                                onDrag = { change, _ -> seekFromX(change.position.x) },
+                            )
+                        },
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .padding(vertical = 8.dp, horizontal = 12.dp)
-                            .height(56.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        TimelineClip(widthDp = 200, label = "Clip 01")
-                        TimelineClip(widthDp = 140, label = "Clip 02")
-                        TimelineClip(widthDp = 260, label = "Clip 03")
+                    if (clips.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = "Add clips from Media",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 10.dp, horizontal = 12.dp)
+                                .height(66.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            clips.forEachIndexed { index, clip ->
+                                TimelineClip(
+                                    clip = clip,
+                                    index = index + 1,
+                                    isSelected = selectedClipIndex == index,
+                                    totalDurationMs = totalDurationMs,
+                                    timelineWidth = trackWidth,
+                                    onSelected = { onClipSelected(index) },
+                                )
+                            }
+                        }
                     }
                 }
             }
 
             // Playhead line
-            val playheadX = 80.dp
             Box(
                 modifier = Modifier
                     .fillMaxHeight()
@@ -98,19 +144,29 @@ fun Timeline(
 }
 
 @Composable
-fun TimelineClip(widthDp: Int, label: String) {
+fun TimelineClip(
+    clip: EngineTimelineClip,
+    index: Int,
+    isSelected: Boolean,
+    totalDurationMs: Long,
+    timelineWidth: androidx.compose.ui.unit.Dp,
+    onSelected: () -> Unit,
+) {
+    val clipWidth = (timelineWidth * (clip.durationMs.toFloat() / totalDurationMs)).coerceAtLeast(84.dp)
+    val borderAlpha = if (isSelected) 1f else 0.35f
     Box(
         modifier = Modifier
-            .width(widthDp.dp)
+            .width(clipWidth)
             .fillMaxHeight()
             .padding(horizontal = 2.dp)
             .clip(RoundedCornerShape(10.dp))
-            .background(NeonPink.copy(alpha = 0.12f))
-            .border(1.dp, NeonPink.copy(alpha = 0.35f), RoundedCornerShape(10.dp)),
+            .background(NeonPink.copy(alpha = if (isSelected) 0.22f else 0.12f))
+            .border(2.dp, NeonPink.copy(alpha = borderAlpha), RoundedCornerShape(10.dp))
+            .clickable(onClick = onSelected),
         contentAlignment = Alignment.CenterStart,
     ) {
         Text(
-            text = label,
+            text = "Clip %02d".format(index),
             style = MaterialTheme.typography.labelSmall,
             color = NeonPink.copy(alpha = 0.9f),
             modifier = Modifier.padding(start = 10.dp),

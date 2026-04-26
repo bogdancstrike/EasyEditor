@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.VideoFile
 import androidx.compose.material3.*
@@ -25,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.videoeditor.app.engine.MediaAsset
 import com.videoeditor.app.engine.NativeBridge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -35,14 +37,13 @@ fun MediaPool(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // Observe clip list reactively
-    val clips by NativeBridge.clips.collectAsState()
+    val mediaAssets by NativeBridge.mediaAssets.collectAsState()
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(),
         onResult = { uris ->
             scope.launch(Dispatchers.IO) {
-                uris.forEach { uri -> NativeBridge.addMediaAsset(context, uri) }
+                uris.forEach { uri -> NativeBridge.importMediaAsset(context, uri) }
             }
         },
     )
@@ -56,7 +57,7 @@ fun MediaPool(modifier: Modifier = Modifier) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = if (clips.isNotEmpty()) "Media  ·  ${clips.size} clip${if (clips.size > 1) "s" else ""}" else "Media",
+                text = if (mediaAssets.isNotEmpty()) "Media  ·  ${mediaAssets.size} item${if (mediaAssets.size > 1) "s" else ""}" else "Media",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -75,7 +76,7 @@ fun MediaPool(modifier: Modifier = Modifier) {
             }
         }
 
-        if (clips.isEmpty()) {
+        if (mediaAssets.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 contentAlignment = Alignment.Center,
@@ -91,7 +92,7 @@ fun MediaPool(modifier: Modifier = Modifier) {
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                     )
                     Text(
-                        "Tap + to add video clips",
+                        "Tap + to import video clips",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     )
@@ -104,11 +105,12 @@ fun MediaPool(modifier: Modifier = Modifier) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                items(clips.size) { idx ->
-                    val clip = clips[idx]
+                items(mediaAssets.size) { idx ->
+                    val asset = mediaAssets[idx]
                     ClipThumbnail(
                         index = idx + 1,
-                        durationMs = clip.durationMs,
+                        asset = asset,
+                        onAddToTimeline = { NativeBridge.addMediaAssetToTimeline(asset) },
                         modifier = Modifier.aspectRatio(16f / 9f),
                     )
                 }
@@ -120,7 +122,8 @@ fun MediaPool(modifier: Modifier = Modifier) {
 @Composable
 private fun ClipThumbnail(
     index: Int,
-    durationMs: Long,
+    asset: MediaAsset,
+    onAddToTimeline: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -128,7 +131,7 @@ private fun ClipThumbnail(
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-            .clickable { /* TODO: tap to scrub */ },
+            .clickable(onClick = onAddToTimeline),
     ) {
         // Clip number in center
         Icon(
@@ -140,7 +143,7 @@ private fun ClipThumbnail(
 
         // Duration badge (bottom-right)
         Text(
-            text = formatDuration(durationMs),
+            text = formatDuration(asset.durationMs),
             style = MaterialTheme.typography.labelSmall,
             fontSize = 9.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -166,6 +169,16 @@ private fun ClipThumbnail(
                 .clip(RoundedCornerShape(4.dp))
                 .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
                 .padding(horizontal = 4.dp, vertical = 2.dp),
+        )
+
+        Icon(
+            Icons.Default.AddCircle,
+            contentDescription = "Add to timeline",
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(4.dp)
+                .size(18.dp),
         )
     }
 }

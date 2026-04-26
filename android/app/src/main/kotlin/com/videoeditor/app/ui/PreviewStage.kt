@@ -22,14 +22,17 @@ import com.videoeditor.app.media.LutPreset
 fun PreviewStage(
     modifier: Modifier = Modifier,
     isPlaying: Boolean = false,
+    currentTimeMs: Long = 0L,
     lutPreset: LutPreset = LutPreset.NONE,
     onPlayingChange: (Boolean) -> Unit = {},
+    onSeek: (Long) -> Unit = {},
     onTimeUpdate: (Long) -> Unit = {},
 ) {
     Box(modifier = modifier.background(Color.Black)) {
         MediaCodecPreview(
             modifier = Modifier.fillMaxSize(),
             isPlaying = isPlaying,
+            currentTimeMs = currentTimeMs,
             lutPreset = lutPreset,
             onTimeUpdate = onTimeUpdate,
         )
@@ -46,7 +49,7 @@ fun PreviewStage(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             IconButton(
-                onClick = { /* TODO: seek -5s */ },
+                onClick = { onSeek((currentTimeMs - 5_000L).coerceAtLeast(0L)) },
                 modifier = Modifier.size(40.dp),
             ) {
                 Icon(
@@ -73,7 +76,7 @@ fun PreviewStage(
             }
 
             IconButton(
-                onClick = { /* TODO: seek +5s */ },
+                onClick = { onSeek(currentTimeMs + 5_000L) },
                 modifier = Modifier.size(40.dp),
             ) {
                 Icon(

@@ -14,7 +14,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 @Composable
 fun UtilityShelf(
@@ -28,7 +27,7 @@ fun UtilityShelf(
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 2.dp,
+        shadowElevation = 4.dp,
     ) {
         Row(
             modifier = Modifier
@@ -44,7 +43,6 @@ fun UtilityShelf(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
-                letterSpacing = (-0.5).sp,
             )
 
             Spacer(modifier = Modifier.weight(1f))

@@ -1,14 +1,17 @@
 package com.videoeditor.app.ui
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.videoeditor.app.engine.NativeBridge
 import com.videoeditor.app.media.LutPreset
 import com.videoeditor.app.media.exportProject
 import kotlinx.coroutines.launch
@@ -22,6 +25,7 @@ fun EditorScreen(
     val scope = rememberCoroutineScope()
 
     var selectedTool by rememberSaveable { mutableStateOf<ToolTab?>(null) }
+    var selectedClipIndex by rememberSaveable { mutableStateOf<Int?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
     var currentTimeMs by remember { mutableStateOf(0L) }
     var selectedLut by rememberSaveable { mutableStateOf(LutPreset.NONE) }
@@ -64,7 +68,11 @@ fun EditorScreen(
         )
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
         UtilityShelf(
             darkTheme = darkTheme,
             onToggleTheme = onToggleTheme,
@@ -81,41 +89,70 @@ fun EditorScreen(
             },
         )
 
-        Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+        ) {
             PreviewStage(
                 modifier = Modifier.fillMaxSize(),
                 isPlaying = isPlaying,
+                currentTimeMs = currentTimeMs,
                 lutPreset = selectedLut,
                 onPlayingChange = { isPlaying = it },
+                onSeek = { timeMs ->
+                    currentTimeMs = timeMs.coerceIn(0L, NativeBridge.getProjectDurationMs().coerceAtLeast(1L))
+                    isPlaying = false
+                },
                 onTimeUpdate = { currentTimeMs = it },
             )
+
+            FloatingToolDock(
+                selectedTool = selectedTool,
+                onToolSelected = { tab -> selectedTool = if (selectedTool == tab) null else tab },
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 12.dp),
+            )
+
+            androidx.compose.animation.AnimatedVisibility(
+                visible = selectedTool != null,
+                enter = slideInHorizontally(initialOffsetX = { -it }) + fadeIn(),
+                exit = slideOutHorizontally(targetOffsetX = { -it }) + fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 84.dp, top = 16.dp, bottom = 16.dp),
+            ) {
+                ToolPanel(
+                    selectedTab = selectedTool ?: ToolTab.MEDIA,
+                    selectedLut = selectedLut,
+                    onLutSelected = { selectedLut = it },
+                    selectedClipIndex = selectedClipIndex,
+                    onClipLutSelected = { lut ->
+                        selectedClipIndex?.let { NativeBridge.setTimelineClipLut(it, lut.ordinal) }
+                    },
+                    onClose = { selectedTool = null },
+                    modifier = Modifier
+                        .widthIn(min = 288.dp, max = 340.dp)
+                        .fillMaxHeight(),
+                )
+            }
         }
 
         Timeline(
-            modifier = Modifier.fillMaxWidth().height(100.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(136.dp),
             currentTimeMs = currentTimeMs,
+            selectedClipIndex = selectedClipIndex,
             onSeek = { timeMs ->
                 currentTimeMs = timeMs
                 isPlaying = false
             },
-        )
-
-        AnimatedVisibility(
-            visible = selectedTool != null,
-            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
-        ) {
-            ToolPanel(
-                selectedTab = selectedTool ?: ToolTab.MEDIA,
-                selectedLut = selectedLut,
-                onLutSelected = { selectedLut = it },
-                modifier = Modifier.fillMaxWidth().height(220.dp),
-            )
-        }
-
-        ToolTabBar(
-            selectedTool = selectedTool,
-            onToolSelected = { tab -> selectedTool = if (selectedTool == tab) null else tab },
+            onClipSelected = { index ->
+                selectedClipIndex = index
+                selectedTool = ToolTab.LOOK
+            },
         )
     }
 }

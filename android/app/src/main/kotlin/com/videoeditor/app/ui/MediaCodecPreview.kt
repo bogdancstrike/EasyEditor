@@ -20,6 +20,7 @@ import com.videoeditor.app.media.VideoPreviewEngine
 fun MediaCodecPreview(
     modifier: Modifier = Modifier,
     isPlaying: Boolean = false,
+    currentTimeMs: Long = 0L,
     lutPreset: LutPreset = LutPreset.NONE,
     onTimeUpdate: (Long) -> Unit = {},
 ) {
@@ -57,9 +58,15 @@ fun MediaCodecPreview(
     // Start / stop
     LaunchedEffect(isPlaying) {
         if (isPlaying) {
-            engine?.play(onTimeUpdate)
+            engine?.play(currentTimeMs, onTimeUpdate)
         } else {
             engine?.stop()
+        }
+    }
+
+    LaunchedEffect(currentTimeMs, clips, lutPreset) {
+        if (!isPlaying && clips.isNotEmpty()) {
+            engine?.renderAt(currentTimeMs, onTimeUpdate)
         }
     }
 

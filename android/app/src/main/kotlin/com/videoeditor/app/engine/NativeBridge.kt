@@ -8,7 +8,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-data class TimelineClip(val uri: String, val durationMs: Long)
+data class MediaAsset(val uri: String, val durationMs: Long, val width: Int, val height: Int)
+data class TimelineClip(val uri: String, val durationMs: Long, val lutPresetOrdinal: Int = 0)
 
 object NativeBridge {
     init {
@@ -19,6 +20,9 @@ object NativeBridge {
     private var projectHandle: Long = 0
 
     private val lock = Any()
+
+    private val _mediaAssets = MutableStateFlow<List<MediaAsset>>(emptyList())
+    val mediaAssets: StateFlow<List<MediaAsset>> = _mediaAssets.asStateFlow()
 
     private val _clips = MutableStateFlow<List<TimelineClip>>(emptyList())
     val clips: StateFlow<List<TimelineClip>> = _clips.asStateFlow()
@@ -33,7 +37,7 @@ object NativeBridge {
         }
     }
 
-    fun addMediaAsset(context: Context, uri: Uri): Boolean {
+    fun importMediaAsset(context: Context, uri: Uri): Boolean {
         if (projectHandle == 0L) initProject("PoC Project")
 
         val retriever = MediaMetadataRetriever()
@@ -51,20 +55,44 @@ object NativeBridge {
             val durationMs = durationStr.toLong()
             val width = widthStr.toInt()
             val height = heightStr.toInt()
-            val status = nativeAddAsset(projectHandle, uri.toString(), durationMs, width, height)
-            if (status == 0) {
-                synchronized(lock) {
-                    _clips.value = _clips.value + TimelineClip(uri.toString(), durationMs)
+            val asset = MediaAsset(uri.toString(), durationMs, width, height)
+            synchronized(lock) {
+                if (_mediaAssets.value.none { it.uri == asset.uri }) {
+                    _mediaAssets.value = _mediaAssets.value + asset
                 }
-                true
-            } else {
-                false
             }
+            true
         } catch (e: Exception) {
             Log.e("NativeBridge", "Error extracting metadata for $uri", e)
             false
         } finally {
             retriever.release()
+        }
+    }
+
+    fun addMediaAssetToTimeline(asset: MediaAsset): Boolean {
+        if (projectHandle == 0L) initProject("PoC Project")
+
+        val status = nativeAddAsset(projectHandle, asset.uri, asset.durationMs, asset.width, asset.height)
+        if (status != 0) return false
+
+        synchronized(lock) {
+            _clips.value = _clips.value + TimelineClip(asset.uri, asset.durationMs)
+        }
+        return true
+    }
+
+    fun removeTimelineClip(index: Int) {
+        synchronized(lock) {
+            _clips.value = _clips.value.filterIndexed { clipIndex, _ -> clipIndex != index }
+        }
+    }
+
+    fun setTimelineClipLut(index: Int, lutPresetOrdinal: Int) {
+        synchronized(lock) {
+            _clips.value = _clips.value.mapIndexed { clipIndex, clip ->
+                if (clipIndex == index) clip.copy(lutPresetOrdinal = lutPresetOrdinal) else clip
+            }
         }
     }
 

@@ -3,26 +3,28 @@ package com.videoeditor.app.ui.theme
 import androidx.compose.ui.graphics.Color
 
 // Dark theme
-val DarkBackground = Color(0xFF0F172A)
-val DarkSurface = Color(0xFF1E293B)
-val DarkSurfaceVariant = Color(0xFF253352)
-val DarkBorder = Color(0x14FFFFFF)
+val DarkBackground = Color(0xFF111113)
+val DarkSurface = Color(0xFF1A1B1F)
+val DarkSurfaceVariant = Color(0xFF2A2C33)
+val DarkBorder = Color(0x24FFFFFF)
 val DarkTextPrimary = Color(0xFFFFFFFF)
-val DarkTextSecondary = Color(0xFF94A3B8)
+val DarkTextSecondary = Color(0xFFA7ADB8)
 
 // Light theme
-val LightBackground = Color(0xFFF1F5F9)
+val LightBackground = Color(0xFFF7F7F4)
 val LightSurface = Color(0xFFFFFFFF)
-val LightSurfaceVariant = Color(0xFFE2E8F0)
-val LightBorder = Color(0x1A000000)
-val LightTextPrimary = Color(0xFF0F172A)
-val LightTextSecondary = Color(0xFF64748B)
+val LightSurfaceVariant = Color(0xFFEDEDE7)
+val LightBorder = Color(0x24000000)
+val LightTextPrimary = Color(0xFF171717)
+val LightTextSecondary = Color(0xFF686B73)
 
 // Brand (shared between themes)
-val NeonPink = Color(0xFFEC4899)
-val DeepPink = Color(0xFFDB2777)
-val ElectricBlue = Color(0xFF2563EB)
-val DestructiveRed = Color(0xFFDC2626)
+val NeonPink = Color(0xFFE83E8C)
+val DeepPink = Color(0xFFC8216F)
+val ElectricBlue = Color(0xFF1F6FEB)
+val WarmAmber = Color(0xFFE89F2A)
+val DestructiveRed = Color(0xFFD33A2C)
+val BrandOnAccent = Color(0xFFFFFFFF)
 
 // Legacy aliases kept for backward compat
 val SurfaceColor = DarkSurface

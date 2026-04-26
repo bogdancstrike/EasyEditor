@@ -1,9 +1,15 @@
 package com.videoeditor.app.media
 
+import android.content.Context
+import com.videoeditor.app.R
 import kotlin.math.pow
 
-enum class LutPreset(val displayName: String) {
+enum class LutPreset(val displayName: String, val rawCubeResId: Int? = null) {
     NONE("No Look"),
+    DLOG_TO_REC709("DLog to Rec709", R.raw.dlog_to_rec709),
+    SUPER8_DAYLIGHT("Daylight", R.raw.super8_daylight),
+    SUPER8_DAYLIGHT_SHARP("Daylight Sharp", R.raw.super8_daylight_sharp),
+    SUPER8_NIGHT("Night", R.raw.super8_night),
     WARM("Warm"),
     COOL("Cool"),
     CINEMATIC("Cinematic"),
@@ -13,9 +19,15 @@ enum class LutPreset(val displayName: String) {
 
 private const val LUT_SIZE = 33
 
-/** Generates a 33×33×33 RGB8 LUT (b-major order, as expected by GL_TEXTURE_3D). */
-fun LutPreset.generateLutData(): ByteArray? {
+data class LutData(val size: Int, val rgb: ByteArray)
+
+/** Generates or loads an RGB8 LUT (b-major order, as expected by GL_TEXTURE_3D). */
+fun LutPreset.generateLutData(context: Context? = null): LutData? {
     if (this == LutPreset.NONE) return null
+    rawCubeResId?.let { resId ->
+        requireNotNull(context) { "Context is required to load cube LUT resources" }
+        return context.resources.openRawResource(resId).bufferedReader().use(::parseCube)
+    }
     val transform: (Float, Float, Float) -> Triple<Float, Float, Float> = when (this) {
         LutPreset.WARM -> { r, g, b ->
             Triple((r * 1.10f + 0.02f).clamp(), (g * 1.02f).clamp(), (b * 0.82f).clamp())
@@ -50,7 +62,7 @@ fun LutPreset.generateLutData(): ByteArray? {
         }
         else -> { r, g, b -> Triple(r, g, b) }
     }
-    return buildLut(transform)
+    return LutData(LUT_SIZE, buildLut(transform))
 }
 
 private fun buildLut(fn: (Float, Float, Float) -> Triple<Float, Float, Float>): ByteArray {
@@ -71,6 +83,37 @@ private fun buildLut(fn: (Float, Float, Float) -> Triple<Float, Float, Float>): 
     }
     return data
 }
+
+private fun parseCube(reader: java.io.BufferedReader): LutData {
+    var size: Int? = null
+    val values = ArrayList<Byte>()
+    reader.lineSequence().forEach { rawLine ->
+        val line = rawLine.trim()
+        if (line.isEmpty() || line.startsWith("#")) return@forEach
+        val parts = line.split(Regex("\\s+"))
+        when (parts.firstOrNull()) {
+            "TITLE", "DOMAIN_MIN", "DOMAIN_MAX", "LUT_1D_SIZE" -> return@forEach
+            "LUT_3D_SIZE" -> {
+                size = parts.getOrNull(1)?.toIntOrNull()
+                return@forEach
+            }
+        }
+        if (parts.size >= 3) {
+            values += parts[0].toFloat().clamp().toByte255()
+            values += parts[1].toFloat().clamp().toByte255()
+            values += parts[2].toFloat().clamp().toByte255()
+        }
+    }
+
+    val lutSize = requireNotNull(size) { "Missing LUT_3D_SIZE in cube file" }
+    val expected = lutSize * lutSize * lutSize * 3
+    require(values.size == expected) {
+        "Invalid cube LUT: expected $expected RGB values for size $lutSize, got ${values.size}"
+    }
+    return LutData(lutSize, values.toByteArray())
+}
+
+private fun Float.toByte255(): Byte = (this * 255f + 0.5f).toInt().coerceIn(0, 255).toByte()
 
 private fun Float.clamp() = coerceIn(0f, 1f)
 
