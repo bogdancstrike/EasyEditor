@@ -35,8 +35,19 @@ public:
     void waitForGpu() override {}
 };
 
+class DummyCodecBackend : public ICodecBackend {
+public:
+    [[nodiscard]] bool openMedia(const std::string&) override { return true; }
+    TextureHandle getFrameAtTime(const std::string&, int64_t) override {
+        return TextureHandle{0, {1920, 1080}, PixelFormat::RGBA16F};
+    }
+    [[nodiscard]] std::unique_ptr<IDecoder> openDecoder(const std::string&) override { return nullptr; }
+    [[nodiscard]] std::unique_ptr<IEncoder> openEncoder(const std::string&, const IEncoder::Settings&) override { return nullptr; }
+};
+
 void test_lut_node_double_allocation() {
     TrackingMockGpuBackend backend;
+    DummyCodecBackend codec_backend;
     std::vector<uint8_t> lut_data(33 * 33 * 33 * 4);
     LutNode node(backend, lut_data);
 
@@ -47,7 +58,7 @@ void test_lut_node_double_allocation() {
     TextureHandle inputs[] = {input};
 
     std::cout << "First render call..." << std::endl;
-    node.render(backend, Time::zero(), inputs);
+    node.render(backend, codec_backend, Time::zero(), inputs);
 
     // EXPECTED (if bug exists): 1 (lut) + 1 (cached_output) + 1 (render output) = 3
     // EXPECTED (if fixed): 1 (lut) + 1 (cached_output) = 2
@@ -58,7 +69,7 @@ void test_lut_node_double_allocation() {
     assert(backend.allocations == 3); 
 
     std::cout << "Second render call with same size..." << std::endl;
-    node.render(backend, Time::zero(), inputs);
+    node.render(backend, codec_backend, Time::zero(), inputs);
 
     // If bug exists: it allocates a NEW 'output' EVERY time.
     // If it also allocates cached_output_ incorrectly... wait.

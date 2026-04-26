@@ -29,16 +29,16 @@ RenderGraph::~RenderGraph() {
     backend_.releaseTexture(output_placeholder_);
 }
 
-TextureHandle RenderGraph::execute(Time time) {
+TextureHandle RenderGraph::execute(ICodecBackend& codec_backend, Time time) {
     // Chain SequenceNode -> LutNode
     
     // 1. SequenceNode produces the source frame
     // Use ScopedTexture to ensure source_frame is released even if subsequent steps throw.
-    ScopedTexture source_frame(backend_, sequence_node_->render(backend_, time, {}));
+    ScopedTexture source_frame(backend_, sequence_node_->render(backend_, codec_backend, time, {}));
     
     // 2. LutNode takes the source frame and applies the 3D LUT
     TextureHandle lut_inputs[] = {source_frame.get()};
-    TextureHandle final_frame = lut_node_->render(backend_, time, lut_inputs);
+    TextureHandle final_frame = lut_node_->render(backend_, codec_backend, time, lut_inputs);
     
     // 3. Update output_placeholder (for Phase 1, we just return the final_frame and release old placeholder)
     if (final_frame.opaque != output_placeholder_.opaque) {

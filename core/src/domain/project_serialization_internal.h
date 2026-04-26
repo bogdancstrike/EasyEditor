@@ -65,7 +65,7 @@ inline void to_json(json& j, const Time& t) {
  * @brief Deserialize Time from JSON.
  */
 inline void from_json(const json& j, Time& t) {
-    t = Time(j.at("ticks").get<int64_t>(), j.at("timebase").get<Rational>().num);
+    t = Time(j.at("ticks").get<int64_t>(), j.at("timebase").get<int64_t>());
 }
 
 /**

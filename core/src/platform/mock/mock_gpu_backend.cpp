@@ -110,8 +110,14 @@ void MockGpuBackend::releaseTexture(TextureHandle texture) {
 
 void MockGpuBackend::dispatchCompute(std::string_view shader_name,
                                      std::span<const TextureHandle> /*inputs*/,
-                                     TextureHandle /*output*/,
+                                     TextureHandle output,
                                      const ShaderConstants& /*constants*/) {
+    if (shader_name == "clear_black" || shader_name == "lut_3d") {
+        MockTexture& mock = requireMockTexture(output);
+        validateHandleMatchesTexture(output, mock);
+        std::fill(mock.bytes.begin(), mock.bytes.end(), 0);
+        return;
+    }
     throw Error(VX_ERR_UNSUPPORTED,
                 "MockGpuBackend has no compute shader implementation: " + std::string{shader_name});
 }

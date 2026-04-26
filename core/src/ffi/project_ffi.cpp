@@ -92,7 +92,7 @@ vx_status_t vx_project_add_asset(VxProject* project, const char* path, int64_t d
         return VX_ERR_INVALID_ARG;
     }
 
-    vx::Time duration = vx::Time::fromSeconds(duration_ms / 1000.0);
+    vx::Time duration = vx::Time::fromSeconds(static_cast<double>(duration_ms) / 1000.0);
     vx::Resolution resolution{width, height};
     projectService().addMediaAsset(*project->project, path, duration, resolution);
     return VX_OK;

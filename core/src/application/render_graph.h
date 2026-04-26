@@ -24,7 +24,7 @@ public:
 
     /// Executes the graph for the given time and returns the final texture.
     /// Phase 1: returns a placeholder texture.
-    [[nodiscard]] TextureHandle execute(Time time);
+    [[nodiscard]] TextureHandle execute(ICodecBackend& codec_backend, Time time);
 
     SequenceNode& sequence_node() { return *sequence_node_; }
     LutNode& lut_node() { return *lut_node_; }

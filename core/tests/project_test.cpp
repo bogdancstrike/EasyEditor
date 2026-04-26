@@ -33,11 +33,11 @@ vx::Project makeProject() {
     clip.duration = vx::Time::fromSeconds(5.0);
 
     vx::Track track;
-    track.id = vx::Uuid::fromString("tttttttt-tttt-tttt-tttt-tttttttttttt");
+    track.id = vx::Uuid::fromString("11111111-1111-1111-1111-111111111111");
     track.clips.push_back(clip);
 
     vx::Sequence sequence;
-    sequence.id = vx::Uuid::fromString("ssssssss-ssss-ssss-ssss-ssssssssssss");
+    sequence.id = vx::Uuid::fromString("22222222-2222-2222-2222-222222222222");
     sequence.tracks.push_back(track);
     project.sequences.push_back(sequence);
 
