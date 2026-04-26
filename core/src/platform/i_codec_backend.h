@@ -39,9 +39,36 @@ class ICodecBackend {
 public:
     virtual ~ICodecBackend() = default;
 
+    /**
+     * @brief Opens a media file for extraction/decoding.
+     * @param uri The URI or path to the media file.
+     * @return true if successfully opened, false otherwise.
+     */
+    [[nodiscard]] virtual bool openMedia(const std::string& uri) = 0;
+
+    /**
+     * @brief Retrieves a frame at the specified time.
+     * @param uri The URI of the media file.
+     * @param time_us The timestamp in microseconds.
+     * @return A handle to the decoded texture.
+     */
+    virtual TextureHandle getFrameAtTime(const std::string& uri, int64_t time_us) = 0;
+
+    /**
+     * @brief Opens a decoder for the specified media.
+     * @param uri The URI of the media file.
+     * @return A unique_ptr to the decoder.
+     */
     [[nodiscard]] virtual std::unique_ptr<IDecoder> openDecoder(const std::string& uri) = 0;
+
+    /**
+     * @brief Opens an encoder to save media to a file.
+     * @param output_path The path to save the encoded file.
+     * @param settings The encoder settings.
+     * @return A unique_ptr to the encoder.
+     */
     [[nodiscard]] virtual std::unique_ptr<IEncoder> openEncoder(const std::string& output_path,
-                                                                const IEncoder::Settings&) = 0;
+                                                                const IEncoder::Settings& settings) = 0;
 };
 
 }  // namespace vx

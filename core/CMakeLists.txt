@@ -21,6 +21,8 @@ add_library(vx_domain STATIC
     src/domain/time.cpp
     src/domain/time.h
     src/domain/rational.h
+    src/domain/clip.h
+    src/domain/sequence.h
     src/domain/project.cpp
     src/domain/project.h
     src/domain/project_migration.cpp
@@ -31,6 +33,7 @@ add_library(vx_domain STATIC
 )
 target_link_libraries(vx_domain PUBLIC vx_util)
 target_include_directories(vx_domain PUBLIC src)
+target_include_directories(vx_domain PRIVATE third_party)
 
 add_library(vx_platform_iface INTERFACE)
 target_include_directories(vx_platform_iface INTERFACE src)
@@ -48,6 +51,10 @@ add_library(vx_application STATIC
     src/application/project_service.h
     src/application/render_graph.cpp
     src/application/render_graph.h
+    src/application/nodes/sequence_node.cpp
+    src/application/nodes/sequence_node.h
+    src/application/nodes/lut_node.cpp
+    src/application/nodes/lut_node.h
 )
 target_link_libraries(vx_application PUBLIC vx_domain vx_platform_iface)
 
@@ -81,7 +88,14 @@ if (ANDROID)
     target_link_libraries(vx_platform_gles PUBLIC vx_platform_iface PRIVATE vx_util GLESv3)
     target_include_directories(vx_platform_gles PUBLIC src)
 
-    target_link_libraries(videoeditor PRIVATE vx_platform_vulkan vx_platform_gles)
+    add_library(vx_platform_android STATIC
+        src/platform/android/android_codec_backend.cpp
+        src/platform/android/android_codec_backend.h
+    )
+    target_link_libraries(vx_platform_android PUBLIC vx_platform_iface PRIVATE vx_util mediandk)
+    target_include_directories(vx_platform_android PUBLIC src)
+
+    target_link_libraries(videoeditor PRIVATE vx_platform_vulkan vx_platform_gles vx_platform_android)
     # add_subdirectory(src/platform/mediacodec)    # TODO Phase 0
 endif()
 
