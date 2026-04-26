@@ -1,0 +1,78 @@
+name: CI Baseline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  format:
+    name: Formatting & Linting
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check clang-format
+        run: |
+          sudo apt-get update && sudo apt-get install -y clang-format
+          find core -name "*.h" -o -name "*.cpp" | xargs clang-format --Werror --dry-run
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Install ktlint
+        run: |
+          curl -sSLO https://github.com/pinterest/ktlint/releases/download/1.2.1/ktlint
+          chmod a+x ktlint
+          sudo mv ktlint /usr/local/bin/
+      
+      - name: Run ktlint
+        run: |
+          cd android
+          ktlint
+
+  build_core:
+    name: Build Core (Linux)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build g++
+
+      - name: Configure CMake
+        run: cmake -B build -G Ninja -DVX_BUILD_TESTS=ON -DVX_WERROR=ON -S core
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Run Tests
+        run: ctest --test-dir build --output-on-failure
+
+  build_android:
+    name: Build Android
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK and CMake
+        run: |
+          yes | sdkmanager "ndk;27.0.12077973" "cmake;3.22.1"
+      
+      - name: Build APK
+        run: |
+          cd android
+          ./gradlew assembleDebug

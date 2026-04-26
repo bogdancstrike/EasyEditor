@@ -1,0 +1,63 @@
+# Build outputs
+build/
+out/
+cmake-build-*/
+**/CMakeCache.txt
+**/CMakeFiles/
+**/cmake_install.cmake
+**/Makefile
+**/compile_commands.json
+.cache/
+
+# Android
+.gradle/
+local.properties
+*.iml
+*.apk
+*.aab
+*.aar
+**/captures/
+**/.cxx/
+**/release/
+android/app/release/
+android/app/debug/
+keystore.properties
+*.jks
+*.keystore
+
+# iOS / Xcode (placeholder)
+ios/build/
+ios/DerivedData/
+*.xcuserdata*
+*.xcworkspace/xcuserdata/
+*.xcscheme
+ios/Pods/
+ios/.swiftpm/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+.clangd/
+.cache/clangd/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Sample assets (use Git LFS instead)
+test_assets/samples/*.mp4
+test_assets/samples/*.mov
+test_assets/samples/*.mkv
+!test_assets/samples/.gitkeep
+
+# Secrets
+*.env
+*.pem
+secrets.json
+
+# Logs
+*.log
+logs/
