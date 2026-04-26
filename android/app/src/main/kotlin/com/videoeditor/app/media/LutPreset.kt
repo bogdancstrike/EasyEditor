@@ -2,6 +2,7 @@ package com.videoeditor.app.media
 
 import android.content.Context
 import com.videoeditor.app.R
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.pow
 
 enum class LutPreset(val displayName: String, val rawCubeResId: Int? = null) {
@@ -18,15 +19,19 @@ enum class LutPreset(val displayName: String, val rawCubeResId: Int? = null) {
 }
 
 private const val LUT_SIZE = 33
+private val LUT_DATA_CACHE = ConcurrentHashMap<LutPreset, LutData>()
 
 data class LutData(val size: Int, val rgb: ByteArray)
 
 /** Generates or loads an RGB8 LUT (b-major order, as expected by GL_TEXTURE_3D). */
 fun LutPreset.generateLutData(context: Context? = null): LutData? {
     if (this == LutPreset.NONE) return null
+    LUT_DATA_CACHE[this]?.let { return it }
     rawCubeResId?.let { resId ->
         requireNotNull(context) { "Context is required to load cube LUT resources" }
-        return context.resources.openRawResource(resId).bufferedReader().use(::parseCube)
+        return LUT_DATA_CACHE.getOrPut(this) {
+            context.resources.openRawResource(resId).bufferedReader().use(::parseCube)
+        }
     }
     val transform: (Float, Float, Float) -> Triple<Float, Float, Float> = when (this) {
         LutPreset.WARM -> { r, g, b ->
@@ -62,7 +67,9 @@ fun LutPreset.generateLutData(context: Context? = null): LutData? {
         }
         else -> { r, g, b -> Triple(r, g, b) }
     }
-    return LutData(LUT_SIZE, buildLut(transform))
+    return LUT_DATA_CACHE.getOrPut(this) {
+        LutData(LUT_SIZE, buildLut(transform))
+    }
 }
 
 private fun buildLut(fn: (Float, Float, Float) -> Triple<Float, Float, Float>): ByteArray {

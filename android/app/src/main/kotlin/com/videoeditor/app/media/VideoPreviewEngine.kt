@@ -50,6 +50,7 @@ void main(){
 private const val FRAGMENT_SHADER_LUT = """#version 300 es
 #extension GL_OES_EGL_image_external_essl3 : require
 precision mediump float;
+precision mediump sampler3D;
 uniform samplerExternalOES sVideo;
 uniform sampler3D sLut;
 in vec2 vTexCoord;
@@ -80,8 +81,13 @@ class VideoPreviewEngine(
     private val outputSurface: Surface,
 ) {
     private val isPlaying = AtomicBoolean(false)
+    private val commandLock = Object()
 
     @Volatile private var renderThread: Thread? = null
+    @Volatile private var released = false
+    @Volatile private var stopRequested = false
+    private var pendingSeek: SeekRequest? = null
+    private var pendingPlay: PlayRequest? = null
     @Volatile private var clips: List<TimelineClip> = emptyList()
     @Volatile private var lutPreset = LutPreset.NONE
     @Volatile private var activeLutPreset = LutPreset.NONE
@@ -93,13 +99,16 @@ class VideoPreviewEngine(
     private var videoProgram = 0
     private var lutProgram = 0
     private var oesTexId = 0
-    private var lutTexId = 0
-    private var loadedLutPreset: LutPreset? = null
-    private var identityLutLoaded = false
+    private val lutTextureIds = mutableMapOf<LutPreset, Int>()
+    private val lutDataCache = mutableMapOf<LutPreset, LutData>()
     private var quadVbo = 0
     private var surfaceTex: SurfaceTexture? = null
     private var decoderSurface: Surface? = null
     private val texMatrix = FloatArray(16)
+
+    init {
+        startRenderWorker()
+    }
 
     fun setClips(clips: List<TimelineClip>) {
         this.clips = clips
@@ -111,38 +120,101 @@ class VideoPreviewEngine(
 
     fun play(startTimeMs: Long = 0L, onTimeUpdate: (Long) -> Unit) {
         if (isPlaying.getAndSet(true)) return
-        val t = Thread({ runPlayback(startTimeMs, onTimeUpdate) }, "VideoRender")
-        t.isDaemon = true
-        renderThread = t
-        t.start()
+        synchronized(commandLock) {
+            stopRequested = false
+            pendingSeek = null
+            pendingPlay = PlayRequest(startTimeMs, onTimeUpdate)
+            commandLock.notifyAll()
+        }
     }
 
     fun stop() {
         isPlaying.set(false)
+        synchronized(commandLock) {
+            stopRequested = true
+            pendingPlay = null
+            commandLock.notifyAll()
+        }
     }
 
     fun release() {
-        stop()
+        synchronized(commandLock) {
+            released = true
+            isPlaying.set(false)
+            stopRequested = true
+            pendingSeek = null
+            pendingPlay = null
+            commandLock.notifyAll()
+        }
         renderThread?.join(2000)
         renderThread = null
     }
 
     fun renderAt(timeMs: Long, onTimeUpdate: (Long) -> Unit = {}) {
-        stop()
-        renderThread?.join(500)
-        val t = Thread({ runSingleFrame(timeMs, onTimeUpdate) }, "VideoSeekRender")
+        synchronized(commandLock) {
+            isPlaying.set(false)
+            stopRequested = true
+            pendingPlay = null
+            pendingSeek = SeekRequest(timeMs, onTimeUpdate)
+            commandLock.notifyAll()
+        }
+    }
+
+    private data class SeekRequest(val timeMs: Long, val onTimeUpdate: (Long) -> Unit)
+    private data class PlayRequest(val startTimeMs: Long, val onTimeUpdate: (Long) -> Unit)
+
+    private fun startRenderWorker() {
+        val t = Thread(::runRenderWorker, "VideoPreviewRender")
         t.isDaemon = true
         renderThread = t
         t.start()
     }
 
-    // ── Playback loop ─────────────────────────────────────────────────────────
-
-    private fun runPlayback(startTimeMs: Long, onTimeUpdate: (Long) -> Unit) {
+    private fun runRenderWorker() {
         try {
             initEgl()
             initGl()
+            while (!released) {
+                val command = synchronized(commandLock) {
+                    while (!released && pendingSeek == null && pendingPlay == null) {
+                        commandLock.wait()
+                    }
+                    if (released) null else pendingPlay?.also { pendingPlay = null } ?: pendingSeek?.also { pendingSeek = null }
+                } ?: break
 
+                when (command) {
+                    is PlayRequest -> runPlayback(command.startTimeMs, command.onTimeUpdate)
+                    is SeekRequest -> runSingleFrame(coalesceSeek(command))
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Preview worker error", e)
+        } finally {
+            isPlaying.set(false)
+            releaseGl()
+            releaseEgl()
+        }
+    }
+
+    private fun coalesceSeek(first: SeekRequest): SeekRequest {
+        var latest = first
+        val deadline = SystemClock.elapsedRealtime() + 24L
+        while (!released) {
+            val waitMs = deadline - SystemClock.elapsedRealtime()
+            synchronized(commandLock) {
+                pendingSeek?.let {
+                    latest = it
+                    pendingSeek = null
+                }
+                if (pendingPlay != null || waitMs <= 0L) return latest
+                commandLock.wait(waitMs)
+            }
+        }
+        return latest
+    }
+
+    private fun runPlayback(startTimeMs: Long, onTimeUpdate: (Long) -> Unit) {
+        try {
             val localClips = clips
             if (localClips.isEmpty()) {
                 Log.d(TAG, "No clips to play")
@@ -151,7 +223,7 @@ class VideoPreviewEngine(
 
             var timeOffset = 0L
             for (clip in localClips) {
-                if (!isPlaying.get()) break
+                if (!isPlaying.get() || stopRequested || released) break
                 val clipEnd = timeOffset + clip.durationMs
                 if (clipEnd <= startTimeMs) {
                     timeOffset = clipEnd
@@ -173,27 +245,20 @@ class VideoPreviewEngine(
             Log.e(TAG, "Playback error", e)
         } finally {
             isPlaying.set(false)
-            releaseGl()
-            releaseEgl()
         }
     }
 
-    private fun runSingleFrame(timeMs: Long, onTimeUpdate: (Long) -> Unit) {
+    private fun runSingleFrame(request: SeekRequest) {
         try {
-            initEgl()
-            initGl()
-            val target = resolveTimelineTime(timeMs) ?: return
+            val target = resolveTimelineTime(request.timeMs) ?: return
             activeLutPreset = target.clip.lutPresetOrdinal
                 .takeIf { it != 0 }
                 ?.let { LutPreset.entries.getOrNull(it) }
                 ?: lutPreset
             renderFrameAt(Uri.parse(target.clip.uri), target.localTimeMs)
-            onTimeUpdate(target.timelineTimeMs)
+            request.onTimeUpdate(target.timelineTimeMs)
         } catch (e: Exception) {
             Log.e(TAG, "Seek render error", e)
-        } finally {
-            releaseGl()
-            releaseEgl()
         }
     }
 
@@ -253,7 +318,7 @@ class VideoPreviewEngine(
         }
 
         try {
-            while (!outputEos && isPlaying.get()) {
+            while (!outputEos && isPlaying.get() && !stopRequested && !released) {
                 if (!inputEos) {
                     val inIdx = decoder.dequeueInputBuffer(10_000L)
                     if (inIdx >= 0) {
@@ -428,9 +493,6 @@ class VideoPreviewEngine(
         GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
         GLES30.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, 0)
 
-        GLES30.glGenTextures(1, texIds, 0)
-        lutTexId = texIds[0]
-
         surfaceTex = SurfaceTexture(oesTexId)
         decoderSurface = Surface(surfaceTex)
 
@@ -454,10 +516,12 @@ class VideoPreviewEngine(
         if (videoProgram != 0) GLES30.glDeleteProgram(videoProgram)
         if (lutProgram != 0) GLES30.glDeleteProgram(lutProgram)
         GLES30.glDeleteTextures(1, intArrayOf(oesTexId), 0)
-        GLES30.glDeleteTextures(1, intArrayOf(lutTexId), 0)
+        lutTextureIds.values.forEach { textureId ->
+            GLES30.glDeleteTextures(1, intArrayOf(textureId), 0)
+        }
+        lutTextureIds.clear()
+        lutDataCache.clear()
         GLES30.glDeleteBuffers(1, intArrayOf(quadVbo), 0)
-        loadedLutPreset = null
-        identityLutLoaded = false
     }
 
     private fun renderFrame() {
@@ -500,13 +564,15 @@ class VideoPreviewEngine(
     }
 
     private fun bindActiveLutTexture(): Boolean {
-        if (activeLutPreset == LutPreset.NONE) {
-            bindIdentityLutTexture()
-            return false
-        }
-        if (loadedLutPreset != activeLutPreset) {
-            val lut = activeLutPreset.generateLutData(context) ?: return false
-            GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, lutTexId)
+        if (activeLutPreset == LutPreset.NONE) return false
+        val textureId = lutTextureIds.getOrPut(activeLutPreset) {
+            val lut = lutDataCache.getOrPut(activeLutPreset) {
+                activeLutPreset.generateLutData(context) ?: return false
+            }
+            val texIds = IntArray(1)
+            GLES30.glGenTextures(1, texIds, 0)
+            val newTextureId = texIds[0]
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, newTextureId)
             GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
             GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
             GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
@@ -528,51 +594,11 @@ class VideoPreviewEngine(
                 GLES30.GL_UNSIGNED_BYTE,
                 data,
             )
-            loadedLutPreset = activeLutPreset
+            newTextureId
         }
         GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
-        GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, lutTexId)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, textureId)
         return true
-    }
-
-    private fun bindIdentityLutTexture() {
-        GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
-        GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, lutTexId)
-        if (!identityLutLoaded) {
-            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
-            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
-            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
-            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
-            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_R, GLES30.GL_CLAMP_TO_EDGE)
-            val identity = byteArrayOf(
-                0, 0, 0,
-                -1, 0, 0,
-                0, -1, 0,
-                -1, -1, 0,
-                0, 0, -1,
-                -1, 0, -1,
-                0, -1, -1,
-                -1, -1, -1,
-            )
-            val data = ByteBuffer.allocateDirect(identity.size)
-                .order(ByteOrder.nativeOrder())
-                .put(identity)
-                .apply { position(0) }
-            GLES30.glTexImage3D(
-                GLES30.GL_TEXTURE_3D,
-                0,
-                GLES30.GL_RGB,
-                2,
-                2,
-                2,
-                0,
-                GLES30.GL_RGB,
-                GLES30.GL_UNSIGNED_BYTE,
-                data,
-            )
-            identityLutLoaded = true
-            loadedLutPreset = null
-        }
     }
 
     private fun setDecoderSurfaceSize(format: MediaFormat) {

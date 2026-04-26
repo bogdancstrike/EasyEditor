@@ -41,6 +41,7 @@ Legend: 🟢 done · 🟡 in progress · 🔴 blocked · ⚪ not started
 
 ### Completed
 
+- [x] **2026-04-26 — LUT Preview Performance Pass.** Refactored preview rendering to keep one EGL/GL worker alive per preview surface, coalesce rapid scrub requests to the latest requested frame, cache parsed `.cube` LUT data process-wide, and cache uploaded LUT textures per GL context instead of rebuilding the renderer on every seek.
 - [x] **2026-04-26 — Editable Instagram Export Preset.** Updated the Instagram preset to a compressed 1080x1920 H.264 30fps baseline at 8 Mbps and kept resolution, fps, codec, and bitrate controls editable after preset selection.
 - [x] **2026-04-26 — Preview Renderer Retry Fix.** Split no-LUT and LUT preview shaders so the baseline video path cannot be blocked by 3D LUT sampler state, and rerender the current frame when the TextureView-backed preview engine becomes available.
 - [x] **2026-04-26 — Timeline Edit Controls.** Added timeline history for undo/redo, selected-clip remove controls, left/right clip reordering, and safer seek clamping after timeline edits.
