@@ -40,6 +40,8 @@ public:
     virtual ~IGpuBackend() = default;
 
     [[nodiscard]] virtual TextureHandle allocateTexture(Size2D size, PixelFormat fmt) = 0;
+    [[nodiscard]] virtual TextureHandle allocateTexture3D(int size, PixelFormat fmt, std::span<const uint8_t> data) = 0;
+    virtual void updateTexture3D(TextureHandle texture, std::span<const uint8_t> data) = 0;
     virtual void releaseTexture(TextureHandle) = 0;
 
     virtual void dispatchCompute(std::string_view shader_name,

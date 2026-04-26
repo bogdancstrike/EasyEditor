@@ -6,6 +6,8 @@
 
 #include "domain/time.h"
 #include "platform/i_gpu_backend.h"
+#include "application/nodes/sequence_node.h"
+#include "application/nodes/lut_node.h"
 
 namespace vx {
 
@@ -24,9 +26,15 @@ public:
     /// Phase 1: returns a placeholder texture.
     [[nodiscard]] TextureHandle execute(Time time);
 
+    SequenceNode& sequence_node() { return *sequence_node_; }
+    LutNode& lut_node() { return *lut_node_; }
+
 private:
     IGpuBackend& backend_;
     TextureHandle output_placeholder_;
+
+    std::unique_ptr<SequenceNode> sequence_node_;
+    std::unique_ptr<LutNode> lut_node_;
 };
 
 }  // namespace vx

@@ -52,11 +52,30 @@ void test_ssim() {
     assert(different < same);
 }
 
+void test_allocate_texture_3d() {
+    vx::MockGpuBackend backend;
+    constexpr int size = 4;
+    std::vector<uint8_t> data(size * size * size * 4, 123); // RGBA8_UNORM
+    
+    const vx::TextureHandle handle = backend.allocateTexture3D(size, vx::PixelFormat::RGBA8_UNORM, data);
+    assert(handle.valid());
+    assert(handle.size.width == size);
+    assert(handle.size.height == size);
+    assert(handle.format == vx::PixelFormat::RGBA8_UNORM);
+
+    const auto bytes = vx::mockTextureBytesConst(handle);
+    assert(bytes.size() == data.size());
+    assert(std::ranges::equal(bytes, data));
+
+    backend.releaseTexture(handle);
+}
+
 }  // namespace
 
 int main() {
     test_allocate_seed_copy_and_release();
     test_copy_rejects_mismatched_format();
+    test_allocate_texture_3d();
     test_ssim();
     return 0;
 }

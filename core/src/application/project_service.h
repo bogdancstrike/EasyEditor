@@ -17,6 +17,14 @@ public:
     [[nodiscard]] std::unique_ptr<Project> createProject(const std::string& name) const;
     [[nodiscard]] std::string serializeJson(const Project& project) const;
     [[nodiscard]] std::unique_ptr<Project> loadJson(const std::string& json) const;
+
+    /**
+     * @brief Adds a media asset to the project and automatically creates a clip in the first sequence.
+     * 
+     * This is a helper for Phase 1 PoC to simplify the UX. In a full implementation,
+     * adding to the pool and adding to the timeline would be separate operations.
+     */
+    void addMediaAsset(Project& project, const std::string& path, Time duration, Resolution resolution) const;
 };
 
 }  // namespace vx

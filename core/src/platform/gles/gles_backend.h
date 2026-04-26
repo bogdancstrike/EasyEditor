@@ -24,6 +24,8 @@ public:
     GlesBackend& operator=(GlesBackend&&) = delete;
 
     [[nodiscard]] TextureHandle allocateTexture(Size2D size, PixelFormat fmt) override;
+    [[nodiscard]] TextureHandle allocateTexture3D(int size, PixelFormat fmt, std::span<const uint8_t> data) override;
+    void updateTexture3D(TextureHandle texture, std::span<const uint8_t> data) override;
     void releaseTexture(TextureHandle texture) override;
 
     void dispatchCompute(std::string_view shader_name,

@@ -84,7 +84,7 @@ typedef struct VxProject VxProject;
 
 /// Create a new empty project with the given display name.
 /// Returns NULL on allocation failure.
-VX_API VxProject* vx_project_create(const char* name);
+[[nodiscard]] VX_API VxProject* vx_project_create(const char* name);
 
 /// Destroy a project and release its resources.
 VX_API void vx_project_destroy(VxProject* project);
@@ -95,6 +95,12 @@ VX_API vx_status_t vx_project_serialize_json(VxProject* project, vx_string_t* ou
 /// Load a project from a JSON string. On success, *out_project owns memory and
 /// must be released with vx_project_destroy.
 VX_API vx_status_t vx_project_load_json(const char* json, VxProject** out_project);
+
+/// Add a media asset to the project.
+/// path: absolute path or URI (caller owned).
+/// duration_ms: duration in milliseconds.
+/// width/height: native resolution.
+VX_API vx_status_t vx_project_add_asset(VxProject* project, const char* path, int64_t duration_ms, int32_t width, int32_t height);
 
 // --------------------------------------------------------------------------
 // (Phase 1+) Sequence, clip, render, export FFI surfaces will be appended here.

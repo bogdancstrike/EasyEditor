@@ -13,15 +13,16 @@ namespace {
 
 struct MockTexture {
     Size2D size;
+    int depth = 1;
     PixelFormat format = PixelFormat::RGBA16F;
     std::vector<uint8_t> bytes;
 };
 
-[[nodiscard]] size_t checkedPixelCount(Size2D size) {
-    if (size.width <= 0 || size.height <= 0) {
+[[nodiscard]] size_t checkedPixelCount(Size2D size, int depth = 1) {
+    if (size.width <= 0 || size.height <= 0 || depth <= 0) {
         throw Error(VX_ERR_INVALID_ARG, "texture dimensions must be positive");
     }
-    return static_cast<size_t>(size.width) * static_cast<size_t>(size.height);
+    return static_cast<size_t>(size.width) * static_cast<size_t>(size.height) * static_cast<size_t>(depth);
 }
 
 [[nodiscard]] size_t bytesPerPixel(PixelFormat format) {
@@ -63,6 +64,44 @@ TextureHandle MockGpuBackend::allocateTexture(Size2D size, PixelFormat fmt) {
     handle.size = size;
     handle.format = fmt;
     return handle;
+}
+
+TextureHandle MockGpuBackend::allocateTexture3D(int size, PixelFormat fmt, std::span<const uint8_t> data) {
+    const size_t byte_count = checkedPixelCount({size, size}, size) * bytesPerPixel(fmt);
+    if (!data.empty() && data.size() != byte_count) {
+        throw Error(VX_ERR_INVALID_ARG, "initial data size does not match 3D texture dimensions");
+    }
+
+    auto texture = std::make_unique<MockTexture>();
+    texture->size = {size, size};
+    texture->depth = size;
+    texture->format = fmt;
+    texture->bytes.resize(byte_count);
+
+    if (!data.empty()) {
+        std::copy(data.begin(), data.end(), texture->bytes.begin());
+    }
+
+    TextureHandle handle;
+    handle.opaque = texture.release();
+    handle.size = {size, size};
+    handle.format = fmt;
+    return handle;
+}
+
+void MockGpuBackend::updateTexture3D(TextureHandle texture, std::span<const uint8_t> data) {
+    MockTexture& mock = requireMockTexture(texture);
+    validateHandleMatchesTexture(texture, mock);
+
+    if (mock.depth <= 1) {
+        throw Error(VX_ERR_INVALID_ARG, "updateTexture3D called on a non-3D texture");
+    }
+
+    if (data.size() != mock.bytes.size()) {
+        throw Error(VX_ERR_INVALID_ARG, "update data size does not match texture dimensions");
+    }
+
+    std::copy(data.begin(), data.end(), mock.bytes.begin());
 }
 
 void MockGpuBackend::releaseTexture(TextureHandle texture) {

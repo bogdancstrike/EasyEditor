@@ -15,10 +15,25 @@ void test_timebase_rebase_equality() {
     assert(a == b);
 }
 
+void test_comparisons() {
+    const vx::Time t1{10, 100};
+    const vx::Time t2{20, 100};
+    const vx::Time t3{1, 10}; // same as t1
+    
+    assert(t1 < t2);
+    assert(t1 <= t2);
+    assert(t2 > t1);
+    assert(t2 >= t1);
+    assert(t1 == t3);
+    assert(t1 <= t3);
+    assert(t1 >= t3);
+}
+
 }  // namespace
 
 int main() {
     test_ntsc_frame_round_trip();
     test_timebase_rebase_equality();
+    test_comparisons();
     return 0;
 }

@@ -46,7 +46,7 @@ void vx_string_free(vx_string_t* s) {
     s->_opaque = nullptr;
 }
 
-VxProject* vx_project_create(const char* name) {
+[[nodiscard]] VxProject* vx_project_create(const char* name) {
     if (name == nullptr) {
         return nullptr;
     }
@@ -83,6 +83,18 @@ vx_status_t vx_project_load_json(const char* json, VxProject** out_project) VX_F
     auto handle = std::make_unique<VxProject>();
     handle->project = projectService().loadJson(json);
     *out_project = handle.release();
+    return VX_OK;
+}
+VX_FFI_CATCH
+
+vx_status_t vx_project_add_asset(VxProject* project, const char* path, int64_t duration_ms, int32_t width, int32_t height) VX_FFI_TRY {
+    if (project == nullptr || project->project == nullptr || path == nullptr) {
+        return VX_ERR_INVALID_ARG;
+    }
+
+    vx::Time duration = vx::Time::fromSeconds(duration_ms / 1000.0);
+    vx::Resolution resolution{width, height};
+    projectService().addMediaAsset(*project->project, path, duration, resolution);
     return VX_OK;
 }
 VX_FFI_CATCH

@@ -259,6 +259,13 @@ TextureHandle VulkanBackend::allocateTexture(Size2D size, PixelFormat fmt) {
     return handle;
 }
 
+TextureHandle VulkanBackend::allocateTexture3D(int size, PixelFormat fmt, std::span<const uint8_t> data) {
+    static_cast<void>(size);
+    static_cast<void>(fmt);
+    static_cast<void>(data);
+    throw Error(VX_ERR_UNSUPPORTED, "Vulkan 3D texture allocation is not implemented in Phase 0");
+}
+
 void VulkanBackend::releaseTexture(TextureHandle texture) {
     if (texture.opaque == nullptr) {
         return;
@@ -291,6 +298,12 @@ void VulkanBackend::copyTexture(TextureHandle src, TextureHandle dst) {
     static_cast<void>(requireTexture(src));
     static_cast<void>(requireTexture(dst));
     throw Error(VX_ERR_UNSUPPORTED, "Vulkan texture copy is not implemented in Phase 0");
+}
+
+void VulkanBackend::updateTexture3D(TextureHandle texture, std::span<const uint8_t> data) {
+    static_cast<void>(texture);
+    static_cast<void>(data);
+    throw Error(VX_ERR_UNSUPPORTED, "Vulkan 3D texture updates are not implemented yet");
 }
 
 void VulkanBackend::waitForGpu() {

@@ -54,9 +54,9 @@ bool Time::operator==(const Time& other) const {
     return rebased(other.timebase_).ticks_ == other.ticks_;
 }
 
-bool Time::operator<(const Time& other) const {
-    if (timebase_ == other.timebase_) return ticks_ < other.ticks_;
-    return rebased(other.timebase_).ticks_ < other.ticks_;
+std::strong_ordering Time::operator<=>(const Time& other) const {
+    if (timebase_ == other.timebase_) return ticks_ <=> other.ticks_;
+    return rebased(other.timebase_).ticks_ <=> other.ticks_;
 }
 
 }  // namespace vx

@@ -35,17 +35,17 @@ Legend: 🟢 done · 🟡 in progress · 🔴 blocked · ⚪ not started
 
 ### Active
 
-- [ ] **GLES 3.2 Fallback Backend.** Implement OpenGL ES 3.2 implementation of `IGpuBackend` to unblock development on emulators and older devices.
-- [ ] **Expanded Project Model.** Implement `MediaAsset`, `Sequence`, `Track`, and `Clip` in the C++ core with JSON serialization (ADR-0009).
-- [ ] **Android Media Picker.** Implement modern Photo Picker in Compose to select multiple videos and pass their URIs to the core.
-- [ ] **Sequence Playback Engine.** Extend the `MediaCodecPlayer` or implement a new `SequenceRenderer` that can transition between multiple video sources on the timeline.
-- [ ] **LUT Engine.** Implement `.cube` parser in C++ and a GPU compute shader (or fragment shader for GLES) to apply 3D LUTs.
+- [ ] **Sequence Playback Engine.** Fully wire `SequenceNode` and `RenderGraph` into the Compose UI to enable live preview of sequenced clips beyond the initial skeleton.
 - [ ] **Export Pipeline.** End-to-end export that renders the sequenced clips with LUTs and saves the result to the Android MediaStore (Gallery).
 - [ ] **UI/UX Polish.** Functional timeline interactions: drag clips, snap, visual feedback for trimming.
 
 ### Completed
 
-*(None yet)*
+- [x] **2026-04-26 — GLES 3.2 Fallback Backend.** Implemented `GlesBackend` with `RGBA16F` support and `updateTexture3D` optimization. Added RAII `GlTextureId` and `ScopedTexture` for safety.
+- [x] **2026-04-26 — Expanded Project Model.** Implemented `MediaAsset`, `Sequence`, `Track`, and `Clip` with `nlohmann::json` serialization. Added full Doxygen documentation (ADR-0009).
+- [x] **2026-04-26 — Android Media Picker.** Implemented modern Photo Picker in `MediaPool` with thread-safe (Dispatchers.IO) JNI wiring and metadata extraction.
+- [x] **2026-04-26 — LUT Engine.** Implemented `LutNode` and a real GLES fragment shader for 3D LUT sampling. Optimized to reuse textures and avoid redundant allocations.
+- [x] **2026-04-26 — Core Engine Skeleton.** Implemented `RenderGraph` core in the application layer, ensuring proper hexagonal layering (ADR-0006).
 
 ---
 

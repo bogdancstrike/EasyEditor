@@ -10,6 +10,7 @@ void test_render_graph_execution() {
     
     TextureHandle handle = graph.execute(Time::zero());
     assert(handle.valid());
+    assert(handle.format == PixelFormat::RGBA16F);
 }
 
 } // namespace vx
