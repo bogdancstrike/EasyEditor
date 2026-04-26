@@ -3,9 +3,10 @@ package com.videoeditor.app.ui
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -13,7 +14,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.VideoFile
 import androidx.compose.material3.*
@@ -21,6 +21,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -126,20 +129,46 @@ private fun ClipThumbnail(
     onAddToTimeline: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var isDragging by remember { mutableStateOf(false) }
+    val frame = rememberVideoFrameBitmap(asset.uri)
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-            .clickable(onClick = onAddToTimeline),
+            .graphicsLayer {
+                scaleX = if (isDragging) 0.96f else 1f
+                scaleY = if (isDragging) 0.96f else 1f
+                alpha = if (isDragging) 0.78f else 1f
+            }
+            .pointerInput(asset.uri) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { isDragging = true },
+                    onDragCancel = { isDragging = false },
+                    onDragEnd = {
+                        isDragging = false
+                        onAddToTimeline()
+                    },
+                    onDrag = { change, _ -> change.consume() },
+                )
+            },
     ) {
-        // Clip number in center
-        Icon(
-            Icons.Default.PlayCircle,
-            contentDescription = null,
-            modifier = Modifier.align(Alignment.Center).size(24.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-        )
+        if (frame != null) {
+            Image(
+                bitmap = frame.asImageBitmap(),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            )
+            Box(modifier = Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.18f)))
+        } else {
+            Icon(
+                Icons.Default.PlayCircle,
+                contentDescription = null,
+                modifier = Modifier.align(Alignment.Center).size(24.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+            )
+        }
 
         // Duration badge (bottom-right)
         Text(
@@ -171,14 +200,36 @@ private fun ClipThumbnail(
                 .padding(horizontal = 4.dp, vertical = 2.dp),
         )
 
-        Icon(
-            Icons.Default.AddCircle,
-            contentDescription = "Add to timeline",
-            tint = MaterialTheme.colorScheme.primary,
+        FilledIconButton(
+            onClick = onAddToTimeline,
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(4.dp)
-                .size(18.dp),
+                .size(28.dp),
+            shape = CircleShape,
+            colors = IconButtonDefaults.filledIconButtonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+            ),
+        ) {
+            Icon(
+                Icons.Default.Add,
+                contentDescription = "Add to timeline",
+                modifier = Modifier.size(18.dp),
+            )
+        }
+
+        Text(
+            text = "Drag",
+            style = MaterialTheme.typography.labelSmall,
+            fontSize = 9.sp,
+            color = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(4.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.92f))
+                .padding(horizontal = 5.dp, vertical = 2.dp),
         )
     }
 }

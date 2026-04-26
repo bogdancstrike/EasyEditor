@@ -7,10 +7,10 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 
 private val AppDarkColorScheme = darkColorScheme(
-    primary = NeonPink,
-    onPrimary = BrandOnAccent,
-    primaryContainer = DeepPink,
-    secondary = ElectricBlue,
+    primary = StudioCyan,
+    onPrimary = DarkBackground,
+    primaryContainer = ElectricBlue,
+    secondary = NeonPink,
     onSecondary = BrandOnAccent,
     tertiary = WarmAmber,
     onTertiary = DarkBackground,
@@ -25,10 +25,10 @@ private val AppDarkColorScheme = darkColorScheme(
 )
 
 private val AppLightColorScheme = lightColorScheme(
-    primary = NeonPink,
-    onPrimary = BrandOnAccent,
-    primaryContainer = DeepPink,
-    secondary = ElectricBlue,
+    primary = StudioCyan,
+    onPrimary = LightTextPrimary,
+    primaryContainer = ElectricBlue,
+    secondary = NeonPink,
     onSecondary = BrandOnAccent,
     tertiary = WarmAmber,
     onTertiary = LightTextPrimary,

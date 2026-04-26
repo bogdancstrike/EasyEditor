@@ -13,6 +13,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.videoeditor.app.engine.NativeBridge
 import com.videoeditor.app.media.LutPreset
+import com.videoeditor.app.media.ExportSettings
 import com.videoeditor.app.media.exportProject
 import kotlinx.coroutines.launch
 
@@ -31,8 +32,22 @@ fun EditorScreen(
     var selectedLut by rememberSaveable { mutableStateOf(LutPreset.NONE) }
 
     var isExporting by remember { mutableStateOf(false) }
+    var isExportSettingsOpen by remember { mutableStateOf(false) }
     var exportProgress by remember { mutableStateOf(0f) }
     var exportMessage by remember { mutableStateOf<String?>(null) }
+
+    fun runExport(settings: ExportSettings) {
+        scope.launch {
+            isExportSettingsOpen = false
+            isExporting = true
+            exportProgress = 0f
+            val result = exportProject(context, settings) { progress ->
+                exportProgress = progress
+            }
+            isExporting = false
+            exportMessage = if (result.success) "Saved to Movies/VxEditor" else (result.error ?: "Unknown error")
+        }
+    }
 
     if (isExporting) {
         AlertDialog(
@@ -68,6 +83,13 @@ fun EditorScreen(
         )
     }
 
+    if (isExportSettingsOpen) {
+        ExportSettingsSheet(
+            onDismiss = { isExportSettingsOpen = false },
+            onExport = ::runExport,
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -76,17 +98,21 @@ fun EditorScreen(
         UtilityShelf(
             darkTheme = darkTheme,
             onToggleTheme = onToggleTheme,
-            onExport = {
-                scope.launch {
-                    isExporting = true
-                    exportProgress = 0f
-                    val result = exportProject(context) { progress ->
-                        exportProgress = progress
-                    }
-                    isExporting = false
-                    exportMessage = if (result.success) "Saved to Movies/VxEditor" else (result.error ?: "Unknown error")
+            onUndo = {
+                isPlaying = false
+                if (NativeBridge.undoTimelineEdit()) {
+                    selectedClipIndex = null
+                    currentTimeMs = currentTimeMs.coerceIn(0L, NativeBridge.getProjectDurationMs().coerceAtLeast(1L))
                 }
             },
+            onRedo = {
+                isPlaying = false
+                if (NativeBridge.redoTimelineEdit()) {
+                    selectedClipIndex = null
+                    currentTimeMs = currentTimeMs.coerceIn(0L, NativeBridge.getProjectDurationMs().coerceAtLeast(1L))
+                }
+            },
+            onExport = { isExportSettingsOpen = true },
         )
 
         Box(
@@ -101,8 +127,8 @@ fun EditorScreen(
                 lutPreset = selectedLut,
                 onPlayingChange = { isPlaying = it },
                 onSeek = { timeMs ->
-                    currentTimeMs = timeMs.coerceIn(0L, NativeBridge.getProjectDurationMs().coerceAtLeast(1L))
                     isPlaying = false
+                    currentTimeMs = timeMs.coerceIn(0L, NativeBridge.getProjectDurationMs().coerceAtLeast(1L))
                 },
                 onTimeUpdate = { currentTimeMs = it },
             )
@@ -146,12 +172,28 @@ fun EditorScreen(
             currentTimeMs = currentTimeMs,
             selectedClipIndex = selectedClipIndex,
             onSeek = { timeMs ->
-                currentTimeMs = timeMs
                 isPlaying = false
+                currentTimeMs = timeMs.coerceIn(0L, NativeBridge.getProjectDurationMs().coerceAtLeast(1L))
             },
             onClipSelected = { index ->
                 selectedClipIndex = index
                 selectedTool = ToolTab.LOOK
+            },
+            onClipRemove = { index ->
+                isPlaying = false
+                NativeBridge.removeTimelineClip(index)
+                selectedClipIndex = null
+                currentTimeMs = currentTimeMs.coerceIn(0L, NativeBridge.getProjectDurationMs().coerceAtLeast(1L))
+            },
+            onClipMoveLeft = { index ->
+                isPlaying = false
+                NativeBridge.moveTimelineClip(index, index - 1)
+                selectedClipIndex = (index - 1).coerceAtLeast(0)
+            },
+            onClipMoveRight = { index ->
+                isPlaying = false
+                NativeBridge.moveTimelineClip(index, index + 1)
+                selectedClipIndex = (index + 1).coerceAtMost(NativeBridge.getTimelineClips().lastIndex)
             },
         )
     }

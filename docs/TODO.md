@@ -36,11 +36,21 @@ Legend: 🟢 done · 🟡 in progress · 🔴 blocked · ⚪ not started
 ### Active
 
 - [ ] **Export Pipeline.** Replace the current MediaCodec transcode path with render-graph export so sequenced clips are exported with selected LUTs and saved to Android MediaStore (Gallery).
-- [ ] **UI/UX Polish.** Add true drag-and-drop media placement from the media pool to the timeline, trim handles, snap behavior, and visual feedback.
+- [ ] **UI/UX Polish.** Add trim handles, snap behavior, and true drop-target placement feedback on the timeline.
 - [ ] **Next UI task.** Add trim-handle gestures and snap feedback against the real project timeline.
 
 ### Completed
 
+- [x] **2026-04-26 — Editable Instagram Export Preset.** Updated the Instagram preset to a compressed 1080x1920 H.264 30fps baseline at 8 Mbps and kept resolution, fps, codec, and bitrate controls editable after preset selection.
+- [x] **2026-04-26 — Preview Renderer Retry Fix.** Split no-LUT and LUT preview shaders so the baseline video path cannot be blocked by 3D LUT sampler state, and rerender the current frame when the TextureView-backed preview engine becomes available.
+- [x] **2026-04-26 — Timeline Edit Controls.** Added timeline history for undo/redo, selected-clip remove controls, left/right clip reordering, and safer seek clamping after timeline edits.
+- [x] **2026-04-26 — Media Drag-to-Timeline.** Added long-press drag-to-add while preserving the thumbnail `+` button for one-tap timeline placement, and added decoded thumbnail previews for imported videos.
+- [x] **2026-04-26 — Reference Timeline Refresh.** Updated the timeline with decoded frame strips, a multi-tick time ruler, selected-clip action controls, and track-bound seek math to prevent cursor jumps from padded coordinate mismatch.
+- [x] **2026-04-26 — Preview Black Frame Fix.** Fixed GLES preview sampler binding by assigning the video external texture and LUT 3D texture to distinct texture units with an identity LUT fallback, and set decoder SurfaceTexture buffer size from source video metadata before playback/seek decode.
+- [x] **2026-04-26 — Multi-clip Export Muxer Fix.** Fixed the "Muxer is not initialized" export failure by using one encoder input surface and one muxer video track for the whole timeline instead of creating a new encoder/muxer track per clip.
+- [x] **2026-04-26 — Export Settings Sheet.** Changed Export from an immediate action into a modal settings flow with Best, Instagram, and Custom modes plus resolution, fps, codec, bitrate, destination, estimated size, and final confirmation.
+- [x] **2026-04-26 — Reference-Driven Visual Token Pass.** Updated Material theme roles so cyan is the primary action/selection color and pink is reserved for creative/editor accents.
+- [x] **2026-04-26 — Mobile Studio Design ADR.** Rewrote ADR-0010 to document the reference-driven mobile editor design: dark editor canvas, cyan export actions, media/tool drawer behavior, Look panel hierarchy, export settings sheet, and completion surface.
 - [x] **2026-04-26 — README Refresh.** Updated `README.md` with project purpose, Phase 1 acceptance flow, current functionality, repository layout, architecture summary, APK build/install commands, and core test commands.
 - [x] **2026-04-26 — Imported Cube LUTs.** Added DJI DLog to Rec709 plus Super 8 Daylight, Daylight Sharp, and Night `.cube` LUTs to Android raw resources and exposed them in the Look panel.
 - [x] **2026-04-26 — Real 3D LUT Preview.** Switched Android live preview from hardcoded shader formulas to GLES 3D LUT texture sampling for built-in and imported cube looks.

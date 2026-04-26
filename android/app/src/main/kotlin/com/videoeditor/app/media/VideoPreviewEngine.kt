@@ -36,21 +36,28 @@ void main() {
 }
 """
 
-// uLutPreset: 0=none 1=warm 2=cool 3=cinematic 4=orangeteal 5=faded
-private const val FRAGMENT_SHADER = """#version 300 es
+private const val FRAGMENT_SHADER_VIDEO = """#version 300 es
+#extension GL_OES_EGL_image_external_essl3 : require
+precision mediump float;
+uniform samplerExternalOES sVideo;
+in vec2 vTexCoord;
+out vec4 outColor;
+void main(){
+    outColor=texture(sVideo,vTexCoord);
+}
+"""
+
+private const val FRAGMENT_SHADER_LUT = """#version 300 es
 #extension GL_OES_EGL_image_external_essl3 : require
 precision mediump float;
 uniform samplerExternalOES sVideo;
 uniform sampler3D sLut;
-uniform int uUseLut;
 in vec2 vTexCoord;
 out vec4 outColor;
 void main(){
     vec4 c=texture(sVideo,vTexCoord);
     vec3 col=clamp(c.rgb,0.0,1.0);
-    if(uUseLut==1) {
-        col=texture(sLut,col).rgb;
-    }
+    col=texture(sLut,col).rgb;
     outColor=vec4(col,c.a);
 }
 """
@@ -83,10 +90,12 @@ class VideoPreviewEngine(
     private var eglDisplay: EGLDisplay = EGL14.EGL_NO_DISPLAY
     private var eglContext: EGLContext = EGL14.EGL_NO_CONTEXT
     private var eglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
-    private var program = 0
+    private var videoProgram = 0
+    private var lutProgram = 0
     private var oesTexId = 0
     private var lutTexId = 0
     private var loadedLutPreset: LutPreset? = null
+    private var identityLutLoaded = false
     private var quadVbo = 0
     private var surfaceTex: SurfaceTexture? = null
     private var decoderSurface: Surface? = null
@@ -225,6 +234,7 @@ class VideoPreviewEngine(
         }
         val format = extractor.getTrackFormat(trackIdx)
         val mime = format.getString(MediaFormat.KEY_MIME) ?: run { extractor.release(); return }
+        setDecoderSurfaceSize(format)
 
         val decoder = MediaCodec.createDecoderByType(mime)
         decoder.configure(format, decoderSurface, null, 0)
@@ -307,6 +317,7 @@ class VideoPreviewEngine(
         extractor.seekTo(targetMs * 1000L, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
         val format = extractor.getTrackFormat(trackIdx)
         val mime = format.getString(MediaFormat.KEY_MIME) ?: run { extractor.release(); return }
+        setDecoderSurfaceSize(format)
         val decoder = MediaCodec.createDecoderByType(mime)
         decoder.configure(format, decoderSurface, null, 0)
         decoder.start()
@@ -405,7 +416,8 @@ class VideoPreviewEngine(
     // ── GL ────────────────────────────────────────────────────────────────────
 
     private fun initGl() {
-        program = buildProgram(VERTEX_SHADER, FRAGMENT_SHADER)
+        videoProgram = buildProgram(VERTEX_SHADER, FRAGMENT_SHADER_VIDEO)
+        lutProgram = buildProgram(VERTEX_SHADER, FRAGMENT_SHADER_LUT)
 
         val texIds = IntArray(1)
         GLES30.glGenTextures(1, texIds, 0)
@@ -439,11 +451,13 @@ class VideoPreviewEngine(
         surfaceTex?.release()
         decoderSurface = null
         surfaceTex = null
-        if (program != 0) GLES30.glDeleteProgram(program)
+        if (videoProgram != 0) GLES30.glDeleteProgram(videoProgram)
+        if (lutProgram != 0) GLES30.glDeleteProgram(lutProgram)
         GLES30.glDeleteTextures(1, intArrayOf(oesTexId), 0)
         GLES30.glDeleteTextures(1, intArrayOf(lutTexId), 0)
         GLES30.glDeleteBuffers(1, intArrayOf(quadVbo), 0)
         loadedLutPreset = null
+        identityLutLoaded = false
     }
 
     private fun renderFrame() {
@@ -457,21 +471,24 @@ class VideoPreviewEngine(
         GLES30.glClearColor(0f, 0f, 0f, 1f)
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
 
-        GLES30.glUseProgram(program)
+        val useLut = activeLutPreset != LutPreset.NONE && bindActiveLutTexture()
+        val currentProgram = if (useLut) lutProgram else videoProgram
+        GLES30.glUseProgram(currentProgram)
 
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, oesTexId)
-        GLES30.glUniform1i(GLES30.glGetUniformLocation(program, "sVideo"), 0)
-        val useLut = bindActiveLutTexture()
-        GLES30.glUniform1i(GLES30.glGetUniformLocation(program, "uUseLut"), if (useLut) 1 else 0)
-        GLES30.glUniformMatrix4fv(GLES30.glGetUniformLocation(program, "uTexMatrix"), 1, false, texMatrix, 0)
+        GLES30.glUniform1i(GLES30.glGetUniformLocation(currentProgram, "sVideo"), 0)
+        if (useLut) {
+            GLES30.glUniform1i(GLES30.glGetUniformLocation(currentProgram, "sLut"), 1)
+        }
+        GLES30.glUniformMatrix4fv(GLES30.glGetUniformLocation(currentProgram, "uTexMatrix"), 1, false, texMatrix, 0)
 
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, quadVbo)
         val stride = 4 * 4
-        val posLoc = GLES30.glGetAttribLocation(program, "aPosition")
+        val posLoc = GLES30.glGetAttribLocation(currentProgram, "aPosition")
         GLES30.glEnableVertexAttribArray(posLoc)
         GLES30.glVertexAttribPointer(posLoc, 2, GLES30.GL_FLOAT, false, stride, 0)
-        val uvLoc = GLES30.glGetAttribLocation(program, "aTexCoord")
+        val uvLoc = GLES30.glGetAttribLocation(currentProgram, "aTexCoord")
         GLES30.glEnableVertexAttribArray(uvLoc)
         GLES30.glVertexAttribPointer(uvLoc, 2, GLES30.GL_FLOAT, false, stride, 2 * 4)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
@@ -483,7 +500,10 @@ class VideoPreviewEngine(
     }
 
     private fun bindActiveLutTexture(): Boolean {
-        if (activeLutPreset == LutPreset.NONE) return false
+        if (activeLutPreset == LutPreset.NONE) {
+            bindIdentityLutTexture()
+            return false
+        }
         if (loadedLutPreset != activeLutPreset) {
             val lut = activeLutPreset.generateLutData(context) ?: return false
             GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, lutTexId)
@@ -512,8 +532,55 @@ class VideoPreviewEngine(
         }
         GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, lutTexId)
-        GLES30.glUniform1i(GLES30.glGetUniformLocation(program, "sLut"), 1)
         return true
+    }
+
+    private fun bindIdentityLutTexture() {
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, lutTexId)
+        if (!identityLutLoaded) {
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_R, GLES30.GL_CLAMP_TO_EDGE)
+            val identity = byteArrayOf(
+                0, 0, 0,
+                -1, 0, 0,
+                0, -1, 0,
+                -1, -1, 0,
+                0, 0, -1,
+                -1, 0, -1,
+                0, -1, -1,
+                -1, -1, -1,
+            )
+            val data = ByteBuffer.allocateDirect(identity.size)
+                .order(ByteOrder.nativeOrder())
+                .put(identity)
+                .apply { position(0) }
+            GLES30.glTexImage3D(
+                GLES30.GL_TEXTURE_3D,
+                0,
+                GLES30.GL_RGB,
+                2,
+                2,
+                2,
+                0,
+                GLES30.GL_RGB,
+                GLES30.GL_UNSIGNED_BYTE,
+                data,
+            )
+            identityLutLoaded = true
+            loadedLutPreset = null
+        }
+    }
+
+    private fun setDecoderSurfaceSize(format: MediaFormat) {
+        val width = if (format.containsKey(MediaFormat.KEY_WIDTH)) format.getInteger(MediaFormat.KEY_WIDTH) else 0
+        val height = if (format.containsKey(MediaFormat.KEY_HEIGHT)) format.getInteger(MediaFormat.KEY_HEIGHT) else 0
+        if (width > 0 && height > 0) {
+            surfaceTex?.setDefaultBufferSize(width, height)
+        }
     }
 
     // ── Shader helpers ────────────────────────────────────────────────────────

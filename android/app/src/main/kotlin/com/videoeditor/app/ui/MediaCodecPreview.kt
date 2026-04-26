@@ -46,17 +46,17 @@ fun MediaCodecPreview(
     }
 
     // Propagate clip changes to existing engine (no rebuild needed)
-    LaunchedEffect(clips) {
+    LaunchedEffect(engine, clips) {
         engine?.setClips(clips)
     }
 
     // Propagate LUT changes
-    LaunchedEffect(lutPreset) {
+    LaunchedEffect(engine, lutPreset) {
         engine?.setLut(lutPreset)
     }
 
     // Start / stop
-    LaunchedEffect(isPlaying) {
+    LaunchedEffect(engine, isPlaying) {
         if (isPlaying) {
             engine?.play(currentTimeMs, onTimeUpdate)
         } else {
@@ -64,7 +64,7 @@ fun MediaCodecPreview(
         }
     }
 
-    LaunchedEffect(currentTimeMs, clips, lutPreset) {
+    LaunchedEffect(engine, currentTimeMs, clips, lutPreset, isPlaying) {
         if (!isPlaying && clips.isNotEmpty()) {
             engine?.renderAt(currentTimeMs, onTimeUpdate)
         }

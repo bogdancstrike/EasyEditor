@@ -21,6 +21,40 @@ private const val BUFFER_TIMEOUT_US = 10_000L
 
 data class ExportResult(val success: Boolean, val uri: Uri? = null, val error: String? = null)
 
+enum class ExportPreset { BEST, INSTAGRAM, CUSTOM }
+enum class ExportCodec(val mimeType: String, val label: String) {
+    H264(MediaFormat.MIMETYPE_VIDEO_AVC, "H.264"),
+    H265(MediaFormat.MIMETYPE_VIDEO_HEVC, "H.265"),
+}
+
+data class ExportResolution(val width: Int, val height: Int, val label: String) {
+    companion object {
+        val Original = ExportResolution(0, 0, "Original")
+        val Reel1080p = ExportResolution(1080, 1920, "1080 x 1920")
+        val Landscape1080p = ExportResolution(1920, 1080, "1920 x 1080")
+        val Square1080p = ExportResolution(1080, 1080, "1080 x 1080")
+    }
+}
+
+data class ExportSettings(
+    val preset: ExportPreset = ExportPreset.BEST,
+    val resolution: ExportResolution = ExportResolution.Original,
+    val fps: Int = 30,
+    val codec: ExportCodec = ExportCodec.H264,
+    val bitrateMbps: Int = 12,
+) {
+    companion object {
+        fun best() = ExportSettings()
+        fun instagram() = ExportSettings(
+            preset = ExportPreset.INSTAGRAM,
+            resolution = ExportResolution.Reel1080p,
+            fps = 30,
+            codec = ExportCodec.H264,
+            bitrateMbps = 8,
+        )
+    }
+}
+
 /**
  * Exports the current project timeline by transcoding each clip in sequence.
  *
@@ -33,6 +67,7 @@ data class ExportResult(val success: Boolean, val uri: Uri? = null, val error: S
  */
 suspend fun exportProject(
     context: Context,
+    settings: ExportSettings = ExportSettings.best(),
     onProgress: (Float) -> Unit,
 ): ExportResult = withContext(Dispatchers.IO) {
     val clips = NativeBridge.getTimelineClips()
@@ -43,7 +78,7 @@ suspend fun exportProject(
     val tempFile = File(context.cacheDir, "export_${System.currentTimeMillis()}.mp4")
 
     try {
-        transcodeClips(context, clips, tempFile, onProgress)
+        transcodeClips(context, clips, tempFile, settings, onProgress)
         val uri = saveToMediaStore(context, tempFile)
         ExportResult(success = true, uri = uri)
     } catch (e: Exception) {
@@ -58,11 +93,18 @@ private fun transcodeClips(
     context: Context,
     clips: List<TimelineClip>,
     outputFile: File,
+    settings: ExportSettings,
     onProgress: (Float) -> Unit,
 ) {
     // Probe the first clip to determine output resolution/format.
-    val (outWidth, outHeight, mimeType) = probeFirstVideoTrack(context, clips[0].uri)
+    val (sourceWidth, sourceHeight, sourceMimeType) = probeFirstVideoTrack(context, clips[0].uri)
         ?: throw IllegalStateException("Unable to read first clip format")
+    val outWidth = settings.resolution.width.takeIf { it > 0 } ?: sourceWidth
+    val outHeight = settings.resolution.height.takeIf { it > 0 } ?: sourceHeight
+    val mimeType = when (settings.preset) {
+        ExportPreset.BEST -> sourceMimeType.takeIf { it == MediaFormat.MIMETYPE_VIDEO_HEVC } ?: settings.codec.mimeType
+        ExportPreset.INSTAGRAM, ExportPreset.CUSTOM -> settings.codec.mimeType
+    }
 
     val muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
     var muxerStarted = false
@@ -71,12 +113,59 @@ private fun transcodeClips(
 
     try {
         val totalDurationMs = clips.sumOf { it.durationMs }.coerceAtLeast(1L)
+        val encoderFormat = MediaFormat.createVideoFormat(mimeType, outWidth, outHeight).apply {
+            setInteger(MediaFormat.KEY_COLOR_FORMAT, android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+            setInteger(MediaFormat.KEY_BIT_RATE, settings.bitrateMbps * 1_000_000)
+            setInteger(MediaFormat.KEY_FRAME_RATE, settings.fps)
+            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+        }
+        val encoder = MediaCodec.createEncoderByType(mimeType)
+        encoder.configure(encoderFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+        val encoderSurface = encoder.createInputSurface()
+        encoder.start()
+        val encoderInfo = MediaCodec.BufferInfo()
 
-        clips.forEachIndexed { clipIdx, clip ->
-            val clipProgressBase = clips.take(clipIdx).sumOf { it.durationMs }.toFloat() / totalDurationMs
-            val clipWeight = clip.durationMs.toFloat() / totalDurationMs
+        fun drainEncoder(endOfStream: Boolean) {
+            if (endOfStream) {
+                encoder.signalEndOfInputStream()
+            }
+            while (true) {
+                val outIdx = encoder.dequeueOutputBuffer(encoderInfo, if (endOfStream) BUFFER_TIMEOUT_US else 0)
+                when {
+                    outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                        check(!muxerStarted) { "Encoder output format changed after muxer start" }
+                        videoTrackIndex = muxer.addTrack(encoder.outputFormat)
+                        muxer.start()
+                        muxerStarted = true
+                    }
+                    outIdx >= 0 -> {
+                        if ((encoderInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0 &&
+                            encoderInfo.size > 0 &&
+                            muxerStarted &&
+                            videoTrackIndex >= 0
+                        ) {
+                            val buf = encoder.getOutputBuffer(outIdx)!!
+                            encoderInfo.presentationTimeUs += muxerPtsOffsetUs
+                            muxer.writeSampleData(videoTrackIndex, buf, encoderInfo)
+                        }
+                        val sawEos = encoderInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
+                        encoder.releaseOutputBuffer(outIdx, false)
+                        if (sawEos) return
+                    }
+                    else -> return
+                }
+            }
+        }
 
-            val extractor = MediaExtractor()
+        try {
+            clips.forEachIndexed { clipIdx, clip ->
+                val clipProgressBase = clips.take(clipIdx).sumOf { it.durationMs }.toFloat() / totalDurationMs
+                val clipWeight = clip.durationMs.toFloat() / totalDurationMs
+
+                val extractor = MediaExtractor()
+                var decoder: MediaCodec? = null
+                var lastPtsUs = 0L
+                var decodedAnyFrame = false
             try {
                 extractor.setDataSource(context, Uri.parse(clip.uri), null)
                 val trackIndex = findVideoTrack(extractor)
@@ -93,28 +182,14 @@ private fun transcodeClips(
                         return@forEachIndexed
                     }
 
-                // Set up encoder (only once, for the first clip that can be read)
-                val encoderFormat = MediaFormat.createVideoFormat(mimeType, outWidth, outHeight).apply {
-                    setInteger(MediaFormat.KEY_COLOR_FORMAT, android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-                    setInteger(MediaFormat.KEY_BIT_RATE, 8_000_000)
-                    setInteger(MediaFormat.KEY_FRAME_RATE, 30)
-                    setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
-                }
-                val encoder = MediaCodec.createEncoderByType(mimeType)
-                encoder.configure(encoderFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-                val encoderSurface = encoder.createInputSurface()
-                encoder.start()
-
                 // Set up decoder → encoder surface
-                val decoder = MediaCodec.createDecoderByType(decoderMime)
+                decoder = MediaCodec.createDecoderByType(decoderMime)
                 decoder.configure(inputFormat, encoderSurface, null, 0)
                 decoder.start()
 
-                val bufferInfo = MediaCodec.BufferInfo()
+                val decoderInfo = MediaCodec.BufferInfo()
                 var sawInputEos = false
                 var sawOutputEos = false
-                var lastPtsUs = 0L
-                var framesDecoded = 0
 
                 while (!sawOutputEos) {
                     // Feed decoder
@@ -134,23 +209,19 @@ private fun transcodeClips(
                     }
 
                     // Drain decoder → encoder surface
-                    val outIdx = decoder.dequeueOutputBuffer(bufferInfo, BUFFER_TIMEOUT_US)
+                    val outIdx = decoder.dequeueOutputBuffer(decoderInfo, BUFFER_TIMEOUT_US)
                     if (outIdx >= 0) {
-                        if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
+                        if (decoderInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
                             sawOutputEos = true
                         }
-                        val render = bufferInfo.size > 0 && (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0
+                        val render = decoderInfo.size > 0 && (decoderInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0
                         decoder.releaseOutputBuffer(outIdx, render)
                         if (render) {
-                            lastPtsUs = bufferInfo.presentationTimeUs
-                            framesDecoded++
+                            lastPtsUs = decoderInfo.presentationTimeUs
+                            decodedAnyFrame = true
                         }
                         // Drain encoder output → muxer
-                        drainEncoder(encoder, bufferInfo, muxer, videoTrackIndex, muxerPtsOffsetUs, muxerStarted) { trackIdx ->
-                            videoTrackIndex = trackIdx
-                            muxer.start()
-                            muxerStarted = true
-                        }
+                        drainEncoder(endOfStream = false)
                         // Report progress
                         if (clip.durationMs > 0) {
                             val clipProgress = (lastPtsUs / 1000).toFloat() / clip.durationMs
@@ -159,91 +230,27 @@ private fun transcodeClips(
                     }
                 }
 
-                // Signal end of stream to encoder
-                encoder.signalEndOfInputStream()
-                drainEncoderUntilEos(encoder, bufferInfo, muxer, videoTrackIndex, muxerPtsOffsetUs, muxerStarted) { trackIdx ->
-                    videoTrackIndex = trackIdx
-                    muxer.start()
-                    muxerStarted = true
+                if (decodedAnyFrame) {
+                    muxerPtsOffsetUs += lastPtsUs + (1_000_000L / settings.fps.coerceAtLeast(1)) // add one frame
                 }
-
-                muxerPtsOffsetUs += lastPtsUs + (1_000_000L / 30) // add one frame
-
-                decoder.stop()
-                decoder.release()
-                encoderSurface.release()
-                encoder.stop()
-                encoder.release()
             } finally {
+                decoder?.stop()
+                decoder?.release()
                 extractor.release()
             }
+            }
+
+            drainEncoder(endOfStream = true)
+        } finally {
+            encoderSurface.release()
+            encoder.stop()
+            encoder.release()
         }
 
         onProgress(1f)
     } finally {
         if (muxerStarted) muxer.stop()
         muxer.release()
-    }
-}
-
-private fun drainEncoder(
-    encoder: MediaCodec,
-    bufferInfo: MediaCodec.BufferInfo,
-    muxer: MediaMuxer,
-    videoTrackIndex: Int,
-    ptsOffsetUs: Long,
-    muxerStarted: Boolean,
-    onTrackAdded: (Int) -> Unit,
-) {
-    var trackIdx = videoTrackIndex
-    while (true) {
-        val outIdx = encoder.dequeueOutputBuffer(bufferInfo, 0)
-        when {
-            outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                trackIdx = muxer.addTrack(encoder.outputFormat)
-                onTrackAdded(trackIdx)
-            }
-            outIdx >= 0 -> {
-                if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0 && muxerStarted && trackIdx >= 0) {
-                    val buf = encoder.getOutputBuffer(outIdx)!!
-                    bufferInfo.presentationTimeUs += ptsOffsetUs
-                    muxer.writeSampleData(trackIdx, buf, bufferInfo)
-                }
-                encoder.releaseOutputBuffer(outIdx, false)
-                if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) return
-            }
-            else -> return
-        }
-    }
-}
-
-private fun drainEncoderUntilEos(
-    encoder: MediaCodec,
-    bufferInfo: MediaCodec.BufferInfo,
-    muxer: MediaMuxer,
-    videoTrackIndex: Int,
-    ptsOffsetUs: Long,
-    muxerStarted: Boolean,
-    onTrackAdded: (Int) -> Unit,
-) {
-    var trackIdx = videoTrackIndex
-    while (true) {
-        val outIdx = encoder.dequeueOutputBuffer(bufferInfo, BUFFER_TIMEOUT_US)
-        when {
-            outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                trackIdx = muxer.addTrack(encoder.outputFormat)
-                onTrackAdded(trackIdx)
-            }
-            outIdx >= 0 -> {
-                if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0 && muxerStarted && trackIdx >= 0) {
-                    val buf = encoder.getOutputBuffer(outIdx)!!
-                    bufferInfo.presentationTimeUs += ptsOffsetUs
-                    muxer.writeSampleData(trackIdx, buf, bufferInfo)
-                }
-                encoder.releaseOutputBuffer(outIdx, false)
-                if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) return
-            }
-        }
     }
 }
 

@@ -27,6 +27,9 @@ object NativeBridge {
     private val _clips = MutableStateFlow<List<TimelineClip>>(emptyList())
     val clips: StateFlow<List<TimelineClip>> = _clips.asStateFlow()
 
+    private val undoStack = ArrayDeque<List<TimelineClip>>()
+    private val redoStack = ArrayDeque<List<TimelineClip>>()
+
     fun initProject(name: String) {
         if (projectHandle == 0L) {
             synchronized(lock) {
@@ -77,23 +80,60 @@ object NativeBridge {
         if (status != 0) return false
 
         synchronized(lock) {
-            _clips.value = _clips.value + TimelineClip(asset.uri, asset.durationMs)
+            replaceTimelineLocked(_clips.value + TimelineClip(asset.uri, asset.durationMs))
         }
         return true
     }
 
     fun removeTimelineClip(index: Int) {
         synchronized(lock) {
-            _clips.value = _clips.value.filterIndexed { clipIndex, _ -> clipIndex != index }
+            if (index !in _clips.value.indices) return
+            replaceTimelineLocked(_clips.value.filterIndexed { clipIndex, _ -> clipIndex != index })
+        }
+    }
+
+    fun moveTimelineClip(fromIndex: Int, toIndex: Int) {
+        synchronized(lock) {
+            val current = _clips.value.toMutableList()
+            if (fromIndex !in current.indices || toIndex !in current.indices || fromIndex == toIndex) return
+            val clip = current.removeAt(fromIndex)
+            current.add(toIndex, clip)
+            replaceTimelineLocked(current)
         }
     }
 
     fun setTimelineClipLut(index: Int, lutPresetOrdinal: Int) {
         synchronized(lock) {
-            _clips.value = _clips.value.mapIndexed { clipIndex, clip ->
+            replaceTimelineLocked(_clips.value.mapIndexed { clipIndex, clip ->
                 if (clipIndex == index) clip.copy(lutPresetOrdinal = lutPresetOrdinal) else clip
-            }
+            })
         }
+    }
+
+    fun undoTimelineEdit(): Boolean = synchronized(lock) {
+        if (undoStack.isEmpty()) return@synchronized false
+        redoStack.addLast(_clips.value)
+        _clips.value = undoStack.removeLast()
+        true
+    }
+
+    fun redoTimelineEdit(): Boolean = synchronized(lock) {
+        if (redoStack.isEmpty()) return@synchronized false
+        undoStack.addLast(_clips.value)
+        _clips.value = redoStack.removeLast()
+        true
+    }
+
+    fun canUndo(): Boolean = synchronized(lock) { undoStack.isNotEmpty() }
+
+    fun canRedo(): Boolean = synchronized(lock) { redoStack.isNotEmpty() }
+
+    private fun replaceTimelineLocked(next: List<TimelineClip>) {
+        val current = _clips.value
+        if (current == next) return
+        undoStack.addLast(current)
+        redoStack.clear()
+        _clips.value = next
     }
 
     fun renderFrame(surface: android.view.Surface, timeMs: Long): Int {

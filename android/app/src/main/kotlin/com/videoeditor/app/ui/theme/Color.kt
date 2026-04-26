@@ -19,6 +19,7 @@ val LightTextPrimary = Color(0xFF171717)
 val LightTextSecondary = Color(0xFF686B73)
 
 // Brand (shared between themes)
+val StudioCyan = Color(0xFF22D3EE)
 val NeonPink = Color(0xFFE83E8C)
 val DeepPink = Color(0xFFC8216F)
 val ElectricBlue = Color(0xFF1F6FEB)
